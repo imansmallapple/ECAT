@@ -1,0 +1,82 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.kotlin.dsl.apply
+import org.gradle.kotlin.dsl.dependencies
+import org.koin.compiler.plugin.KoinGradleExtension
+import org.meshtastic.buildlogic.libs
+import org.meshtastic.buildlogic.plugin
+
+class KoinConventionPlugin : Plugin<Project> {
+    override fun apply(target: Project) {
+        with(target) {
+            apply(plugin = libs.plugin("koin-compiler").get().pluginId)
+
+            // Configure Koin K2 Compiler Plugin (0.4.0+)
+            extensions.configure(KoinGradleExtension::class.java) {
+                // Meshtastic uses dependency inversion across KMP modules — interfaces in
+                // commonMain, implementations wired at the composition root. Koin's compileSafety
+                // flag enables A1 per-module checks that treat every module as self-contained,
+                // which breaks this pattern. There is no separate flag for A3 full-graph
+                // validation. Until Koin exposes granular safety levels we keep this disabled;
+                // runtime graph verification is handled by KoinVerificationTest instead.
+                compileSafety.set(false)
+            }
+
+            val koinAnnotations = libs.findLibrary("koin-annotations").get()
+            val koinCore = libs.findLibrary("koin-core").get()
+
+            pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+                dependencies {
+                    add("commonMainApi", koinCore)
+                    add("commonMainApi", koinAnnotations)
+                }
+            }
+
+            pluginManager.withPlugin("com.android.application") {
+                // If this is *only* an Android module (no KMP plugin)
+                if (!pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
+                    dependencies {
+                        add("implementation", koinCore)
+                        add("implementation", koinAnnotations)
+                    }
+                }
+            }
+
+            pluginManager.withPlugin("com.android.library") {
+                // If this is *only* an Android library module (no KMP plugin)
+                if (!pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
+                    dependencies {
+                        add("implementation", koinCore)
+                        add("implementation", koinAnnotations)
+                    }
+                }
+            }
+
+            pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+                // If this is *only* a JVM module (no KMP plugin)
+                if (!pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
+                    dependencies {
+                        add("implementation", koinCore)
+                        add("implementation", koinAnnotations)
+                    }
+                }
+            }
+        }
+    }
+}

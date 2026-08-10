@@ -1,0 +1,491 @@
+name: Make Release
+
+on:
+  workflow_call:
+    inputs:
+      base_version:
+        description: 'The base version for the release (e.g., 2.3.0)'
+        required: true
+        type: string
+      tag_name:
+        description: 'The tag that triggered the release'
+        required: true
+        type: string
+      commit_sha:
+        description: 'The commit SHA to build and tag'
+        required: false
+        type: string
+      channel:
+        description: 'The channel to create a release for or promote to'
+        required: true
+        type: string
+      build_desktop:
+        description: 'Whether to build the desktop distribution'
+        required: false
+        type: boolean
+        default: false
+      build_flatpak_src:
+        description: 'Whether to build the Flatpak sources'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      GSERVICES:
+        required: true
+      KEYSTORE:
+        required: true
+      KEYSTORE_FILENAME:
+        required: true
+      KEYSTORE_PROPERTIES:
+        required: true
+      DATADOG_APPLICATION_ID:
+        required: true
+      DATADOG_CLIENT_TOKEN:
+        required: true
+      GOOGLE_MAPS_API_KEY:
+        required: true
+      GOOGLE_PLAY_JSON_KEY:
+        required: true
+      GRADLE_ENCRYPTION_KEY:
+        required: true
+      GRADLE_CACHE_URL:
+        required: false
+      GRADLE_CACHE_USERNAME:
+        required: false
+      GRADLE_CACHE_PASSWORD:
+        required: false
+      INTERNAL_BUILDS_HOST:
+        required: false
+      INTERNAL_BUILDS_HOST_PAT:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: read
+  id-token: write
+  attestations: write
+
+jobs:
+  prepare-build-info:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      APP_VERSION_NAME: ${{ steps.prep_version.outputs.APP_VERSION_NAME }}
+      APP_VERSION_CODE: ${{ steps.calculate_version_code.outputs.versionCode }}
+    env:
+      GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+      GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+      GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - name: Prep APP_VERSION_NAME
+        id: prep_version
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          VERSION_NAME=$(echo $INPUT_TAG_NAME | sed 's/-.*//' | sed 's/v//')
+          echo "APP_VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "Parsed Version: $VERSION_NAME"
+
+      - name: Extract VERSION_CODE_OFFSET from config.properties
+        id: get_version_code_offset
+        run: |
+          OFFSET=$(grep '^VERSION_CODE_OFFSET=' config.properties | cut -d'=' -f2)
+          echo "VERSION_CODE_OFFSET=$OFFSET" >> $GITHUB_OUTPUT
+
+      - name: Calculate Version Code from Git Commit Count
+        id: calculate_version_code
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          OFFSET=${{ steps.get_version_code_offset.outputs.VERSION_CODE_OFFSET }}
+          VERSION_CODE=$((COMMIT_COUNT + OFFSET))
+          echo "versionCode=$VERSION_CODE" >> $GITHUB_OUTPUT
+        shell: bash
+
+  release-google:
+    runs-on: ubuntu-24.04
+    needs: [prepare-build-info]
+    env:
+      GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+      GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+      GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache_read_only: 'false'
+
+      - name: Load secrets
+        env:
+          GSERVICES: ${{ secrets.GSERVICES }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+          DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
+          DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: |
+          rm -f ./androidApp/google-services.json
+          echo $GSERVICES > ./androidApp/google-services.json
+          echo $KEYSTORE | base64 -di > ./androidApp/$KEYSTORE_FILENAME
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
+          echo "datadogApplicationId=$DATADOG_APPLICATION_ID" >> ./secrets.properties
+          echo "datadogClientToken=$DATADOG_CLIENT_TOKEN" >> ./secrets.properties
+          echo "MAPS_API_KEY=$GOOGLE_MAPS_API_KEY" >> ./secrets.properties
+          echo "$GOOGLE_PLAY_JSON_KEY" > ./fastlane/play-store-credentials.json
+
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.4'
+          bundler-cache: true
+
+      - name: Build and Deploy Google Play to Internal Track with Fastlane
+        env:
+          VERSION_NAME: ${{ needs.prepare-build-info.outputs.APP_VERSION_NAME }}
+          VERSION_CODE: ${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }}
+        run: bundle exec fastlane internal
+
+      - name: List outputs
+        run: ls -R androidApp/build/outputs/
+
+      - name: Upload Google AAB artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-aab
+          path: androidApp/build/outputs/bundle/googleRelease/androidApp-google-release.aab
+          retention-days: 1
+
+      - name: Upload Google APK artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: google-apk
+          path: androidApp/build/outputs/apk/google/release/*.apk
+          retention-days: 1
+
+      - name: Attest Google AAB provenance
+        if: success()
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: androidApp/build/outputs/bundle/googleRelease/androidApp-google-release.aab
+
+      - name: Attest Google APK provenance
+        if: success()
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: androidApp/build/outputs/apk/google/release/*.apk
+
+  release-fdroid:
+    runs-on: ubuntu-24.04
+    needs: [prepare-build-info]
+    env:
+      GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+      GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+      GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache_read_only: 'false'
+
+      - name: Load secrets
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_FILENAME: ${{ secrets.KEYSTORE_FILENAME }}
+          KEYSTORE_PROPERTIES: ${{ secrets.KEYSTORE_PROPERTIES }}
+        run: |
+          echo $KEYSTORE | base64 -di > ./androidApp/$KEYSTORE_FILENAME
+          echo "$KEYSTORE_PROPERTIES" > ./keystore.properties
+
+      - name: Setup Fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.4'
+          bundler-cache: true
+
+      - name: Build F-Droid with Fastlane
+        env:
+          VERSION_NAME: ${{ needs.prepare-build-info.outputs.APP_VERSION_NAME }}
+          VERSION_CODE: ${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }}
+        run: bundle exec fastlane fdroid_build
+
+      - name: List outputs
+        run: ls -R androidApp/build/outputs/
+
+      - name: Upload F-Droid APK artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fdroid-apk
+          path: androidApp/build/outputs/apk/fdroid/release/*.apk
+          retention-days: 1
+
+      - name: Attest F-Droid APK provenance
+        if: success()
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: androidApp/build/outputs/apk/fdroid/release/*.apk
+
+  release-desktop:
+    if: ${{ inputs.build_desktop }}
+    runs-on: ${{ matrix.os }}
+    needs: [prepare-build-info]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04, ubuntu-22.04-arm]
+    env:
+      GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+      GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+      GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache_read_only: 'false'
+          install_jetbrains_jdk: 'true'
+
+      - name: Install dependencies for AppImage
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      - name: Package Native Distributions
+        env:
+          ORG_GRADLE_PROJECT_appVersionName: ${{ needs.prepare-build-info.outputs.APP_VERSION_NAME }}
+          VERSION_CODE: ${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          SIGN_MACOS: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY != '' && 'true' || 'false' }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        # Build the release distribution for the current OS.
+        # On macOS, also build a ReleaseUberJar for the Homebrew Cask.
+        # Quote the -P flag: PowerShell on Windows interprets the dot in
+        # `-PaboutLibraries.release=true` as member access on `-PaboutLibraries`,
+        # splitting the token and feeding `.release=true` to Gradle as a task name.
+        run: >
+          ./gradlew :desktopApp:packageReleaseDistributionForCurrentOS
+          ${{ contains(runner.os, 'macOS') && ':desktopApp:packageReleaseUberJarForCurrentOS' || '' }}
+          '-PaboutLibraries.release=true' --no-daemon
+
+      - name: List Desktop Binaries
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: ls -R desktopApp/build/compose/binaries/main-release
+
+      - name: Upload Desktop Artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            desktopApp/build/compose/binaries/main-release/*/*.dmg
+            desktopApp/build/compose/binaries/main-release/*/*.msi
+            desktopApp/build/compose/binaries/main-release/*/*.exe
+            desktopApp/build/compose/binaries/main-release/*/*.deb
+            desktopApp/build/compose/binaries/main-release/*/*.rpm
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage
+            desktopApp/build/compose/jars/*-release.jar
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Attest Desktop artifact provenance
+        if: success()
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            desktopApp/build/compose/binaries/main-release/*/*.dmg
+            desktopApp/build/compose/binaries/main-release/*/*.msi
+            desktopApp/build/compose/binaries/main-release/*/*.exe
+            desktopApp/build/compose/binaries/main-release/*/*.deb
+            desktopApp/build/compose/binaries/main-release/*/*.rpm
+            desktopApp/build/compose/binaries/main-release/*/*.AppImage
+            desktopApp/build/compose/jars/*-release.jar
+
+  create-flatpak-src:
+    if: ${{ inputs.build_flatpak_src }}
+    runs-on: ${{ matrix.os }}
+    needs: [prepare-build-info]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm]
+    env:
+      GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+      GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+      GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          cache_read_only: 'true'
+          install_jetbrains_jdk: 'true'
+
+      # Uses an isolated Gradle user home so every artifact actually traverses the
+      # network — the flatpak-sources plugin captures URLs via BuildOperationListener and
+      # only sees ExternalResourceReadBuildOperation events for cache misses. With the
+      # shared cache, downloads would be skipped and the manifest would be (nearly) empty.
+      # We drive packageUberJarForCurrentOS — the same task the in-flatpak build invokes —
+      # so the runtime classpath is fully resolved (skiko, ktor-cio, kable-btleplug-ffi, …
+      # are runtime-only and would be missed by :assemble).
+      - name: Generate Flatpak Sources
+        run: >
+          ./gradlew --no-build-cache --no-configuration-cache
+          -Dgradle.user.home=${{ runner.temp }}/flatpak-gradle-home
+          :desktopApp:packageUberJarForCurrentOS :captureFlatpakSources
+
+      - name: Stage manifest
+        run: cp build/flatpak-sources.json flatpak-sources.json
+
+      - name: List Flatpak source files
+        run: ls -l flatpak-sources.json
+
+      - name: Upload Flatpak source artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-multisrc-${{ runner.arch }}
+          path: flatpak-sources.json
+          retention-days: 1
+
+  release-flatpak-src:
+    if: ${{ inputs.build_flatpak_src }}
+    runs-on: ubuntu-24.04
+    needs: [create-flatpak-src]
+    steps:
+      - name: Download Flatpak source artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: flatpak-multisrc-*
+          path: flatpak-multisrc
+
+      - name: List Flatpak source files
+        run: ls -R flatpak-multisrc/
+
+      - name: Validate Flatpak source files
+        run: jq empty flatpak-multisrc/*/flatpak-sources.json
+
+      - name: Combine Flatpak source files
+        run: >
+          jq -s 'add | unique_by(.dest + "/" + .["dest-filename"])'
+          flatpak-multisrc/*/flatpak-sources.json
+          > flatpak-sources.json
+
+      - name: Upload combined Flatpak source artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-sources
+          path: flatpak-sources.json
+          retention-days: 1
+      
+      - name: Attest combined Flatpak source artifact provenance
+        if: success()
+        uses: actions/attest@v4
+        with:
+          subject-path: flatpak-sources.json
+
+  github-release:
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-24.04-arm
+    needs:
+      - prepare-build-info
+      - release-google
+      - release-fdroid
+      - release-desktop
+      - release-flatpak-src
+    env:
+      INTERNAL_BUILDS_HOST: ${{ secrets.INTERNAL_BUILDS_HOST }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ./artifacts
+
+      - name: Exclude flatpak-multisrc artifacts from release
+        run: rm -rf ./artifacts/flatpak-multisrc-*
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          target_commitish: ${{ inputs.commit_sha || github.sha }}
+          name: ${{ inputs.tag_name }} (${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }})
+          generate_release_notes: true
+          files: ./artifacts/**/*
+          draft: true
+          prerelease: true
+
+      - name: Create or Update internal GitHub Release
+        continue-on-error: true
+        if: ${{ env.INTERNAL_BUILDS_HOST != '' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          repository: ${{ secrets.INTERNAL_BUILDS_HOST }}
+          token: ${{ secrets.INTERNAL_BUILDS_HOST_PAT }}
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.tag_name }} (${{ needs.prepare-build-info.outputs.APP_VERSION_CODE }})
+          generate_release_notes: false
+          files: ./artifacts/**/*
+          draft: false
+          prerelease: true

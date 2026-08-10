@@ -1,0 +1,177 @@
+---
+title: Viestit ja kanavat
+parent: Käyttöopas
+nav_order: 3
+last_updated: 2026-06-25
+description: Lähetä ja vastaanota viestejä, hallitse kanavia, määritä salaus, hae keskusteluja sekä käytä pikachatia, reaktioita ja viestitoimintoja.
+aliases:
+  - kanavat
+  - yksityisviestit
+  - viestit
+  - keskustelut
+---
+
+# Viestit ja kanavat
+
+Meshtastic tukee kahta viestintätilaa: **kanavaviestit** ja **suoraviestit**.
+
+## Kanavat
+
+Kanavat ovat jaettuja viestintäryhmiä. Kaikki radiot, jotka on määritetty samalla kanava-avaimella, voivat lukea ja lähettää viestejä kyseisellä kanavalla.
+
+### Oletuskanava
+
+Jokaisessa Meshtastic-laitteessa on oletuksena **LongFast**-kanava. Tämä on salaamaton kanava yleiseen mesh-viestintään.
+
+### Kanavan turvallisuus
+
+Kanavat tukevat useita salaustasoja:
+
+| Ikoni | Suojaustaso                               | Kuvaus                                                                                                                                                            |
+| ----- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔒    | PSK (256-bittinen AES) | Täysin salattu vahvalla esijaetulla avaimella. Vain samaa avainta käyttävät radiot voivat lukea viestejä.                         |
+| 🔐    | PSK (128-bittinen AES) | Salattu lyhyemmällä avaimella. Useimmille käyttötapauksille turvallinen, mutta 256-bittinen on suositeltu arkaluontoiseen dataan. |
+| 🔓    | Oletus / avoin                            | Käyttää tunnettua oletusavainta. **Kaikki Meshtastic-radiot** samalla esiasetuksella voivat lukea nämä viestit.                   |
+| ⚠️    | Turvaton + sijainti                       | Avoin kanava, joka lähettää myös GPS-sijaintisi. Käytä varoen julkisissa verkoissa.                                               |
+
+> 🔒 **Tietoturvavinkki:** Käytä aina yksilöllistä PSK-avainta yksityiseen viestintään. Oletuskanava on tarkoituksella avoin, jotta uudet käyttäjät löytävät mesh-verkon — luo erillinen salattu kanava arkaluontoiselle viestinnälle.
+
+### Kanavan lisääminen
+
+1. Siirry kohtaan **Asetukset → Kanavat**.
+2. Napauta **Lisää kanava** tai skannaa QR-koodi.
+3. Määritä kanavan nimi ja salausavain.
+4. Jaa kanavan URL tai QR-koodi muille, jotka tarvitsevat pääsyn.
+
+Napauttamalla kanavaa näet sen tiedot ja jakovaihtoehdot.
+
+## Yksityisviestit
+
+Yksityisviestit (DM) ovat kahden radion välistä päästä päähän salattua viestintää.
+
+### Yksityisviestin lähettäminen
+
+1. Avaa **Viestit**-välilehti.
+2. Valitse radion yhteystiedoista tai napauta radiota radiolistasta.
+3. Kirjoita viesti ja napauta **Lähetä**.
+
+### Viestin tilat
+
+| Tila                                              | Ikoni | Tarkoitus                                                                 |
+| ------------------------------------------------- | ----- | ------------------------------------------------------------------------- |
+| Jonossa                                           | ⏳     | Viestiä odotetaan lähetettäväksi                                          |
+| Matkalla                                          | ✓     | Toimitettu radiolle, odottaa kuittausta                                   |
+| Toimitettu                                        | ✓✓    | Kuittaus vastaanotettu vastaanottajalta                                   |
+| Vastaanotettu                                     | ✓     | Viesti vastaanotettu mesh-verkosta (saapuva)           |
+| Varastoi & välitä             | 🔗    | Viestiä reititetään Varastoi & välitä -radion kautta  |
+| Varastoi & välitä vahvistettu | 🔗    | Toimitus vahvistettu Varastoi & välitä -radion kautta |
+| Virhe                                             | ✗     | Toimitus epäonnistui uudelleenyritysten jälkeen                           |
+
+### Toimitusvirheet
+
+Kun viestin toimitus epäonnistuu, virheilmaisin näyttää, mikä meni pieleen:
+
+| Virhe                                                  | Merkitys                                        | Toimenpiteet                                                                                                                                                                             |
+| ------------------------------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ei reittiä                                             | Kohderadioon ei ole reittiä                     | Vastaanottaja voi olla offline-tilassa tai verkon kantaman ulkopuolella. Yritä myöhemmin tai siirry lähemmäksi.                                          |
+| Hylkäyskuittaus vastaanotettu (NAK) | Seuraavan hypyn radio kieltäytyi välittämästä   | Välittäjä-radio voi olla ruuhkautunut. Odota ja yritä uudelleen.                                                                                         |
+| Aikakatkaisu                                           | Ei kuittausta uudelleenyritysten aikana         | Vastaanottaja voi olla kantaman ulkopuolella. Yritä nostaa hyppyrajaa tai siirtyä parempaan paikkaan.                                                    |
+| Ei Käyttöliittymää                                     | Lähetykseen ei ole käytettävissä radioliitäntää | Tarkista, että radio on yhdistetty ja kanava on määritetty.                                                                                                              |
+| Kaikki uudelleenyritykset käytetty                     | Uudelleenyritysten enimmäismäärä saavutettu     | Mesh-reitti ei ole luotettava. Kokeile toista kanavaa tai odota olosuhteiden parantumista.                                                               |
+| Ei Kanavaa                                             | Kohdekanavaa ei ole olemassa                    | Varmista, että molemmilla radioilla on sama kanavakonfiguraatio.                                                                                                         |
+| Liian suuri                                            | Viesti ylittää sallitun enimmäiskoon            | Lyhennä viestisi (enintään noin 200 merkkiä).                                                                                                         |
+| Ei vastausta                                           | Radio vastaanotti viestin mutta ei vastannut    | Vastaanottajan radio voi olla varattu tai virransäästötilassa.                                                                                                           |
+| Käyttöasteen rajoitus                                  | Alueellinen lähetysajan raja saavutettu         | Radiosi on käyttänyt sallitun lähetysajan. Odota, että käyttöasteen rajoituksen ikkuna nollautuu (tyypillisesti 1 tunti EU-alueilla). |
+| Virheellinen pyyntö                                    | Viallinen tai virheellinen viesti               | Tämä yleensä viittaa ohjelmistovirheeseen. Kokeile käynnistää sovellus uudelleen.                                                                        |
+
+> 💡 Vinkki: Useimmat toimitusvirheet korjaantuvat itsestään. Jos radio on ajoittain tavoitettavissa, mesh yrittää uudelleen. Jos “Ei reittiä” -virhe toistuu, tarkista että välissä olevat reitittävät radiot ovat verkossa.
+
+## Viestiominaisuudet
+
+### Pikachatti
+
+Valmiiksi määritetyt viestit nopeaan viestintään:
+
+- Käytettävissä viestikentän Pikachatti-painikkeen kautta
+- Valitse valmiista sisäänrakennetuista viesteistä tai omista viesteistä
+- Muokkaa pikachatti-viestejä kohdassa **Asetukset → Pikachatti**
+- Hyödyllinen, kun kirjoittaminen on hankalaa (hanskat, pieni näyttö, kiire)
+
+![Pikachatti-vaihtoehto](../../assets/screenshots/messages_quick_chat.png)
+
+Jokaisella pikaviestillä on lyhyt **Nimi** (painikkeen teksti), lisättävä **Viesti** sekä **Lähetä heti** -kytkin. Kun se on käytössä, painikkeen napauttaminen lähettää viestin välittömästi sen sijaan, että se lisättäisiin muokattavaksi syöttökenttään:
+
+![Uusi pikakeskusteluviestin valintaikkuna, jossa näkyvät nimi, viesti ja Lähetä heti -kytkin](../../assets/screenshots/messages_edit_quick_chat.png)
+
+Kanavalista näyttää jokaisen kanavan ja sen viimeisimmän viestin esikatselun.
+
+### Viestien haku
+
+Voit hakea koko keskusteluhistorian suoraan chat-näkymästä:
+
+1. Avaa keskustelu (kanava tai suoraviesti).
+2. Napauta **hakukuvaketta** yläpalkissa.
+3. Kirjoita **Etsi viestejä** -kenttään. Haku toimii kirjoittaessa ja käy läpi kaikki tallennetut viestit kyseisessä keskustelussa.
+4. Käytä **N / M** -laskuria ja edellinen/seuraava -nuolia siirtyäksesi osumien välillä, jotka on korostettu keskustelussa.
+
+![Viestihaku-palkki tuloslaskurilla ja nuolilla](../../assets/screenshots/messages_search_bar.png)
+
+> 💡 Vinkki: Haku on täystekstihaku ja toimii vain siinä keskustelussa, josta avasit sen — se ei hae muista kanavista tai kontakteista. Osumat löytyvät nopeasti myös pitkistä historiatiedoista, koska viestit on indeksoitu paikallisesti.
+
+### Viestikuplat
+
+Viestit näkyvät chat-kuplina — lähetetyt viestit oikealla, vastaanotetut vasemmalla. Jokainen kupla näyttää lähettäjän, aikaleiman ja toimitustilan. Vastaukselliset viestit sisältävät alkuperäisen viestin esikatselun vastauksen yläpuolella.
+
+### Reaktiot
+
+Reagoi viesteihin emojeilla:
+
+- **Pitkä painallus** viestissä avaa toimintovalikon
+- Napauta **Lisää reaktio** valitaksesi emojin
+- Reaktiot näkyvät viestin alapuolella
+- Useampi käyttäjä voi reagoida samaan viestiin
+- Voit reagoida omiin ja muiden viesteihin
+
+![Emoji-reaktiot viestin alla](../../assets/screenshots/messages_reaction.png)
+
+> 💡 Vinkki: Reaktiot kuluttavat vain vähän mesh-verkon kaistaa verrattuna täysiin tekstiviesteihin.
+
+### Viestitoiminnot
+
+Pitkä painallus missä tahansa viestissä avaa:
+
+- **Kopioi** — kopioi viestin teksti leikepöydälle
+- **Vastaa** — lainaa viesti vastaukseesi
+- **Reagoi** — lisää emoji-reaktio
+- **Poista** — poista lähettämäsi viesti (paikallinen poisto)
+
+### Viestien prioriteetti
+
+Viestit jonotetaan ja lähetetään prioriteetin mukaan:
+
+1. Hätä ja hälytysviestit (korkein)
+2. Suoraviestit
+3. Kanavaviestit (alin prioriteetti)
+
+### Viestirajoitukset
+
+- **Enimmäispituus:** 200 tavua (noin 200 merkkiä ASCII-tekstille)
+- **Rajoitusnopeus:** mesh-verkko tasaa lähetysajan oikeudenmukaisesti; suuri viestimäärä voi joutua rajoitetuksi
+- **Toimitus:** viestit yritetään lähettää uudelleen automaattisesti, jos kuittausta ei saada
+
+## Parhaat käytännöt
+
+- Käytä kanavia ryhmäviestintään
+- Käytä suoraviestejä kahden käyttäjän väliseen yksityiseen viestintään
+- Pidä viestit lyhyinä — mesh-verkon kaistanleveys on rajallinen
+- Määritä salaus arkaluontoiselle viestinnälle
+
+## Aiheeseen liittyvät aiheet
+
+- [Radiot](nodes) — napauta radiota aloittaaksesi suoraviestin
+- [Asetukset — Radio ja käyttäjä](settings-radio-user) — määritä kanavan salaus ja esiasetukset
+- [MQTT](mqtt) — välittää kanavaviestit internetiin
+- [Kanavien määritys](https://meshtastic.org/docs/configuration/radio/channels) — tarkemmat kanava-asetukset meshtastic.org-sivustolla
+
+---
+

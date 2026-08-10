@@ -1,0 +1,431 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.feature.messaging.component
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.model.Message
+import org.meshtastic.core.model.MessageStatus
+import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.Reaction
+import org.meshtastic.core.resources.Res
+import org.meshtastic.core.resources.a11y_message_from
+import org.meshtastic.core.resources.filter_message_label
+import org.meshtastic.core.resources.reply
+import org.meshtastic.core.resources.security_signed_verified
+import org.meshtastic.core.ui.component.AutoLinkText
+import org.meshtastic.core.ui.component.HighlightedText
+import org.meshtastic.core.ui.component.NODE_TINT_EMPHASIZED
+import org.meshtastic.core.ui.component.NODE_TINT_MUTED
+import org.meshtastic.core.ui.component.NODE_TINT_NORMAL
+import org.meshtastic.core.ui.component.NodeChip
+import org.meshtastic.core.ui.component.Rssi
+import org.meshtastic.core.ui.component.Snr
+import org.meshtastic.core.ui.component.StatusSurface
+import org.meshtastic.core.ui.component.TransportIcon
+import org.meshtastic.core.ui.component.nodeBorderStroke
+import org.meshtastic.core.ui.component.nodeTintedContainer
+import org.meshtastic.core.ui.emoji.EmojiPickerDialog
+import org.meshtastic.core.ui.icon.FormatQuote
+import org.meshtastic.core.ui.icon.HopCount
+import org.meshtastic.core.ui.icon.MeshtasticIcons
+import org.meshtastic.core.ui.icon.ShieldCheck
+import org.meshtastic.core.ui.theme.MessageItemColors
+import org.meshtastic.core.ui.theme.StatusColors.StatusGreen
+import org.meshtastic.core.ui.util.createClipEntry
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Suppress("LongMethod", "CyclomaticComplexMethod")
+@Composable
+fun MessageItem(
+    modifier: Modifier = Modifier,
+    node: Node,
+    ourNode: Node,
+    message: Message,
+    selected: Boolean,
+    inSelectionMode: Boolean = false,
+    onReply: () -> Unit = {},
+    sendReaction: (String) -> Unit = {},
+    onShowReactions: () -> Unit = {},
+    showUserName: Boolean = true,
+    emojis: List<Reaction> = emptyList(),
+    quickEmojis: List<String> = listOf("👍", "👎", "😂", "🔥", "❤️", "😮"),
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
+    onDoubleClick: () -> Unit = {},
+    onSelect: () -> Unit = {},
+    onDelete: () -> Unit = {},
+    onClickChip: (Node) -> Unit = {},
+    onNavigateToOriginalMessage: (Int) -> Unit = {},
+    onStatusClick: () -> Unit = {},
+    hasSamePrev: Boolean = false,
+    hasSameNext: Boolean = false,
+    searchQuery: String = "",
+) = Column(
+    modifier =
+    modifier
+        .fillMaxWidth()
+        .padding(
+            top =
+            if (showUserName) {
+                6.dp
+            } else {
+                1.dp
+            },
+        ),
+) {
+    var activeSheet by remember { mutableStateOf<ActiveSheet?>(null) }
+    val clipboardManager = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val isLocal = node.num == ourNode.num
+    if (activeSheet != null) {
+        ModalBottomSheet(onDismissRequest = { activeSheet = null }, sheetState = sheetState) {
+            when (activeSheet) {
+                ActiveSheet.Actions -> {
+                    MessageActionsContent(
+                        quickEmojis = quickEmojis,
+                        onReply = {
+                            activeSheet = null
+                            onReply()
+                        },
+                        onReact = { emoji ->
+                            activeSheet = null
+                            sendReaction(emoji)
+                        },
+                        onMoreReactions = { activeSheet = ActiveSheet.Emoji },
+                        onCopy = {
+                            activeSheet = null
+                            coroutineScope.launch {
+                                clipboardManager.setClipEntry(createClipEntry(message.text, "message"))
+                            }
+                        },
+                        onSelect = {
+                            activeSheet = null
+                            onSelect()
+                        },
+                        onDelete = {
+                            activeSheet = null
+                            onDelete()
+                        },
+                        statusString = message.getStatusStringRes(),
+                        status =
+                        if (isLocal) {
+                            message.status
+                        } else {
+                            null
+                        },
+                        xeddsaSigned = message.xeddsaSigned,
+                        onStatus = onStatusClick,
+                    )
+                }
+
+                ActiveSheet.Emoji -> {
+                    EmojiPickerDialog(
+                        onDismiss = { activeSheet = null },
+                        onConfirm = { emoji ->
+                            activeSheet = null
+                            sendReaction(emoji)
+                        },
+                    )
+                }
+
+                null -> {}
+            }
+        }
+    }
+
+    val containsBel = message.text.contains('\u0007')
+
+    val nodeColor = Color(if (message.fromLocal) ourNode.colors.second else node.colors.second)
+    // Match the node card: a faint node wash over the neutral surface + a node outline (more AA than a saturated
+    // fill).
+    val tintFraction =
+        when {
+            inSelectionMode && selected -> NODE_TINT_EMPHASIZED
+            message.filtered || (inSelectionMode && !selected) -> NODE_TINT_MUTED
+            else -> NODE_TINT_NORMAL
+        }
+    val containerColor = nodeTintedContainer(nodeColor, fraction = tintFraction)
+    val cardBorder = nodeBorderStroke(nodeColor, active = selected)
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val metadataStyle = MaterialTheme.typography.labelSmall
+    val messageShape =
+        getMessageBubbleShape(
+            cornerRadius = 8.dp,
+            isSender = message.fromLocal,
+            hasSamePrev = hasSamePrev,
+            hasSameNext = hasSameNext,
+        )
+    val messageModifier =
+        Modifier.padding(horizontal = 8.dp)
+            .then(
+                if (containsBel) {
+                    Modifier.border(2.dp, color = MessageItemColors.Red, shape = messageShape)
+                } else {
+                    Modifier
+                },
+            )
+    val senderName = if (message.fromLocal) ourNode.user.long_name else node.user.long_name
+    val messageA11yText = stringResource(Res.string.a11y_message_from, senderName, message.text)
+    if (showUserName && !message.fromLocal) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            NodeChip(node = node, onClick = onClickChip, modifier = Modifier.height(28.dp))
+            Text(
+                text = node.user.long_name,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+    Surface(
+        modifier =
+        Modifier.align(if (message.fromLocal) Alignment.End else Alignment.Start)
+            .padding(
+                start = if (!message.fromLocal) 0.dp else 24.dp,
+                end = if (message.fromLocal) 0.dp else 24.dp,
+            )
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    onLongClick()
+                    if (!inSelectionMode) {
+                        activeSheet = ActiveSheet.Actions
+                    }
+                },
+                onDoubleClick = onDoubleClick,
+            )
+            .then(messageModifier)
+            .semantics(mergeDescendants = true) {
+                contentDescription = messageA11yText
+                role = Role.Button
+            },
+        color = containerColor,
+        contentColor = contentColor,
+        shape = messageShape,
+        border = cardBorder,
+    ) {
+        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            OriginalMessageSnippet(
+                modifier = Modifier.fillMaxWidth(),
+                message = message,
+                ourNode = ourNode,
+                onNavigateToOriginalMessage = onNavigateToOriginalMessage,
+            )
+
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                if (searchQuery.isNotEmpty()) {
+                    HighlightedText(
+                        text = message.text,
+                        query = searchQuery,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                    )
+                } else {
+                    AutoLinkText(
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = contentColor,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier,
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (!message.fromLocal) {
+                        // XEdDSA is only set on verified broadcasts, never DMs — so this never shows on a DM.
+                        if (message.xeddsaSigned) {
+                            // Solo icon → equal padding so the pill renders as a circle.
+                            StatusSurface(contentPadding = PaddingValues(3.dp)) {
+                                Icon(
+                                    imageVector = MeshtasticIcons.ShieldCheck,
+                                    contentDescription = stringResource(Res.string.security_signed_verified),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.StatusGreen,
+                                )
+                            }
+                        }
+                        if (message.hopsAway == 0 && !message.viaMqtt) {
+                            StatusSurface {
+                                Snr(message.snr)
+                                Rssi(message.rssi)
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Icon(
+                                    imageVector = MeshtasticIcons.HopCount,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = Color.White,
+                                )
+                                Text(
+                                    text = if (message.hopsAway >= 0) message.hopsAway.toString() else "?",
+                                    style = metadataStyle,
+                                    color = Color.White,
+                                )
+                            }
+                        }
+                        TransportIcon(
+                            transport = message.transportMechanism,
+                            viaMqtt = message.viaMqtt,
+                            modifier = Modifier.size(16.dp),
+                            tint = Color.White,
+                        )
+                    }
+                    if (containsBel) {
+                        Text(text = "\uD83D\uDD14", modifier = Modifier.padding(start = 4.dp))
+                    }
+                    if (message.filtered) {
+                        Text(
+                            text = stringResource(Res.string.filter_message_label),
+                            style = metadataStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp, end = 4.dp),
+                        )
+                    }
+                    if (message.fromLocal) {
+                        MessageStatusIcon(
+                            status = message.status ?: MessageStatus.UNKNOWN,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(modifier = Modifier.padding(start = 16.dp), text = message.time, style = metadataStyle)
+                }
+            }
+        }
+    }
+
+    ReactionRow(
+        modifier =
+        Modifier.align(if (message.fromLocal) Alignment.End else Alignment.Start)
+            .padding(
+                start = if (!message.fromLocal) 0.dp else 24.dp,
+                end = if (message.fromLocal) 0.dp else 24.dp,
+            ),
+        reactions = if (message.fromLocal) emojis.reversed() else emojis,
+        myId = ourNode.user.id,
+        onSendReaction = sendReaction,
+        onShowReactions = onShowReactions,
+    )
+}
+
+private enum class ActiveSheet {
+    Actions,
+    Emoji,
+}
+
+@Composable
+private fun OriginalMessageSnippet(
+    message: Message,
+    ourNode: Node,
+    onNavigateToOriginalMessage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val originalMessage = message.originalMessage
+    if (originalMessage != null && originalMessage.packetId != 0) {
+        val originalMessageNode = if (originalMessage.fromLocal) ourNode else originalMessage.node
+        // Same node-tinted treatment as the bubble (keeps onSurface text AA), but at the emphasized tint so the quoted
+        // header still reads as distinct from the bubble body below it.
+        val replyContainerColor =
+            nodeTintedContainer(Color(originalMessageNode.colors.second), fraction = NODE_TINT_EMPHASIZED)
+        val replyContentColor = MaterialTheme.colorScheme.onSurface
+        // Rectangle shape — the outer message bubble's Surface clips to its
+        // rounded corners, so the reply header inherits the correct top radii
+        // automatically and stays square on the bottom where body text follows.
+        Surface(
+            modifier = modifier.fillMaxWidth().clickable { onNavigateToOriginalMessage(originalMessage.packetId) },
+            contentColor = replyContentColor,
+            color = replyContainerColor,
+            shape = RectangleShape,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    MeshtasticIcons.FormatQuote,
+                    contentDescription = stringResource(Res.string.reply),
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = originalMessageNode.user.short_name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = originalMessage.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:custom="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@id/select_all_item"
+        android:title="@string/select_all_label"
+        custom:showAsAction="never">
+    </item>
+
+    <item
+        android:id="@id/deselect_all_item"
+        android:title="@string/deselect_all_label"
+        custom:showAsAction="never">
+    </item>
+
+</menu>

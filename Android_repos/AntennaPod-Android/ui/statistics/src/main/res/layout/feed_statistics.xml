@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <include
+            android:id="@+id/playbackTime"
+            layout="@layout/feed_statistics_card" />
+
+        <include
+            android:id="@+id/episodesStarted"
+            layout="@layout/feed_statistics_card" />
+
+        <include
+            android:id="@+id/spaceDownloaded"
+            layout="@layout/feed_statistics_card" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/secondRowContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:orientation="horizontal"
+        tools:visibility="visible">
+
+        <include
+            android:id="@+id/durationTotal"
+            layout="@layout/feed_statistics_card" />
+
+        <include
+            android:id="@+id/episodesTotal"
+            layout="@layout/feed_statistics_card" />
+
+        <include
+            android:id="@+id/episodesDownloaded"
+            layout="@layout/feed_statistics_card" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <include
+            android:id="@+id/expectedNextEpisode"
+            layout="@layout/feed_statistics_card" />
+
+        <include
+            android:id="@+id/episodeSchedule"
+            layout="@layout/feed_statistics_card" />
+
+    </LinearLayout>
+
+</LinearLayout>

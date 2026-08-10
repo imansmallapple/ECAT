@@ -1,0 +1,54 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.core.service
+
+import android.app.ForegroundServiceStartNotAllowedException
+import android.content.Context
+import android.os.Build
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
+import co.touchlab.kermit.Logger
+import org.meshtastic.core.service.worker.ServiceKeepAliveWorker
+
+// / Helper function to start running our service
+fun MeshService.Companion.startService(context: Context) {
+    // We explicitly start the service as a foreground service so it stays alive for the duration of the radio
+    // connection — keeping the BLE/TCP/serial link active and forwarding packets to the mesh network.
+    Logger.i { "Trying to start service debug=${false}" }
+
+    val intent = createIntent(context)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        try {
+            context.startForegroundService(intent)
+        } catch (ex: ForegroundServiceStartNotAllowedException) {
+            Logger.w { "Unable to start service foreground: ${ex.message}. Scheduling fallback worker." }
+            scheduleKeepAliveWorker(context)
+        }
+    } else {
+        context.startForegroundService(intent)
+    }
+}
+
+private fun scheduleKeepAliveWorker(context: Context) {
+    val request =
+        OneTimeWorkRequestBuilder<ServiceKeepAliveWorker>()
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .build()
+
+    WorkManager.getInstance(context).enqueue(request)
+}
