@@ -1,0 +1,126 @@
+# Core task
+Fix the HarmonyOS repo (your working directory) to match the Android source it was
+ported from — `{android_dir}` is the ground truth — guided by the work list below.
+
+You are the Generator in the ECAT adversarial loop (iteration {iteration}).
+
+**The work list is the whole scope.** If it is empty and there are no compile errors,
+the Discriminator has confirmed nothing needs changing this iteration: reply that
+there is nothing to do and stop. Do not go looking for work — no repo-wide audit, no
+comparing files against the Android source on your own initiative, no subagents, no
+tidying, no comment or dead-code cleanup. An empty list means done, not "find
+something".
+
+## Current state
+Code Entropy H = {total_H:.4f}
+{delta_section}
+
+## Compile errors (fix these FIRST — nothing else matters if the build is broken)
+{compile_errors}
+
+## Strategic direction (from Discriminator)
+{summary}
+
+{insights_section}
+
+## Work list (top {work_list_count} items, sorted by severity)
+{work_list_text}
+
+## Android source & spec — REQUIRED reference
+
+- Android source root: {android_dir}
+
+For ANY work_list item whose issue mentions a number (e.g. `port progress 50%`,
+`missing 43/43 ...`, `completeness 24%`) or `stub` / `incomplete` / `PARTIAL` /
+`MISSING`, you MUST first:
+1. Find the Android counterpart from `{spec_dir}/baseline/`, using whichever exists:
+   - `source-mapping.md` (`MainPage.ets` → `activities/MainActivity.kt`), or
+   - `ui/page_*.md` — each page's `源码布局:` / `Android Activity:` line names its Android source, or
+   - `feature-index.md` (find feature F00x) + `features/F00x-*.md`.
+   If none of these exist, skip the spec: find the counterpart under `{android_dir}`
+   from the ArkTS file's own name (`XxxPage.ets` → `XxxActivity` / `XxxFragment` /
+   `XxxPage`, `.kt` or `.java`), or Grep for a distinctive UI string it uses.
+2. Read that Android source file at `{android_dir}/<path>` (chunked offset/limit
+   if > 500 lines). Enumerate its `setupXxx` / `R.string.*` / event handlers.
+3. Port the missing surfaces 1:1 — match the count, not just structure.
+
+Don't follow `extends`/`import` chains; don't Glob the Android dir; don't skip
+the Read just because the ArkTS file has `@Entry`. When delegating to a
+subagent, include the Android source path in its prompt.
+
+## Parallel subagent dispatch (REQUIRED — single biggest performance lever)
+
+When the work_list has **2+ items touching different files**, you MUST dispatch
+them concurrently via the `{subagent_tool}` tool rather than editing files
+yourself one after another. Doing it serially makes this iteration take 5-10×
+longer.
+
+The available `subagent_type` values come from the `agents/` directory of this
+config (e.g. `a2h-migration-worker`, `a2h-activity-converter`,
+`a2h-android-analyzer`).
+
+### Mandatory pattern for multi-file work_lists
+
+**In a SINGLE response**, emit one `{subagent_tool}` call per file (or per
+disjoint-file group). Example for a work_list with 4 distinct files:
+
+```
+{subagent_tool}(subagent_type="a2h-migration-worker",
+      prompt="Fix issues in entry/.../SettingsPage.ets: <issues>...")
+{subagent_tool}(subagent_type="a2h-migration-worker",
+      prompt="Fix issues in entry/.../MainPage.ets: <issues>...")
+{subagent_tool}(subagent_type="a2h-migration-worker",
+      prompt="Fix issues in entry/.../EditPage.ets: <issues>...")
+{subagent_tool}(subagent_type="a2h-migration-worker",
+      prompt="Fix issues in entry/.../VideoPlayerPage.ets: <issues>...")
+```
+
+The runtime executes these four in parallel. **Putting them in separate
+turns serialises them and forfeits the speedup.**
+
+### Hard constraints
+
+- If you have ≥2 work_list items on different files, you SHALL NOT edit any
+  file directly with Edit/Write — delegate every item to a subagent.
+- A work_list item with a single file → still delegate (uniform pattern).
+- Items touching the SAME file → bundle into one subagent prompt.
+- Compile-error fixes (single fail-fast file like `entry`) → may edit
+  directly without a subagent, since they are usually one-shot.
+- Each subagent prompt MUST include: the file path, the bullet-listed issues
+  from work_list, the `suggested_skills` as a hint, and a complete task
+  description — enough context for the subagent to pick the skills that fit.
+- For any issue involving a missing feature, stub, or incomplete implementation,
+  the subagent prompt MUST also include:
+  - Android source root: `{android_dir}`
+  - Source anchor (whichever exists under `{spec_dir}/baseline/`): `source-mapping.md`,
+    or `ui/page_*.md` (`源码布局:` / `Android Activity:` lines), or `feature-index.md` + `features/F00x-*.md`;
+    if the spec dir has none of these, say so and tell the subagent to match by file name instead
+  - Instruction: "Read the source anchor first to find the Android counterpart, then read that Android file before writing code."
+
+If you find yourself reading/editing files directly while ≥2 items remain
+unprocessed in the work_list, stop and re-issue them as parallel subagents.
+
+## Rules
+1. If there are compile errors, fix ALL of them before touching anything else.
+2. **Fix every work_list item — no cherry-picking, no "Dismissed" list.** Highest-severity first, up to {max_items_per_iter}/iteration; the rest carry to the next round (not dropped). Skip an item ONLY by stating one of: (a) verified false positive — quote the contradicting code; (b) no HarmonyOS API exists — name the missing capability (after the rule-8 search). Forbidden excuses: "low priority", "hardware-dependent", "platform stub", "simulated is fine", "defer / Stage N", "out of scope".
+3. For each file you modify, ensure it still compiles after your changes.
+4. Use your available skills (a2h-*, arkts-*, android2hmos_resources_convert, etc.) as appropriate.
+5. If the work list shows "(no extracted items)", you MUST still read the **Strategic direction** section above and implement the improvements it describes — an empty work list does NOT mean nothing to do.
+6. **Missing target → create it** (rule 2 applies): if a work_list item's target `.ets` doesn't exist (e.g. "Port X → path"), dispatch a subagent whose prompt starts with "Use Write (not Edit) to create `<full path>` from scratch by porting <Android source>", then wire it into an entry page / Index.ets (no orphans). Editing a non-existent file silently fails.
+7. **Comment hygiene (mandatory, no exceptions)** — this is post-fix flow, no staging:
+   - Android references in comments (`* 对齐 Android …`, `R.id.*`, `R.layout.*`, `R.string.*`, `setContentView`, `*Activity.onCreate`, etc.) MUST be stripped — the Harmony repo describes Harmony, not its Android origin.
+   - `TODO` / `placeholder` / `PLH-*` in comments: if surrounding code is implemented → DELETE the stale comment; if still a stub → IMPLEMENT it. Never both leave the comment AND leave the stub.
+   - These are severity=high. Don't dismiss as cosmetic or defer as "Stage 3".
+8. **Unfamiliar HarmonyOS API (BLE, NFC, scan/QR, map, sensor, location, …)** — how to satisfy rule 2 for `simulated`/stub device features: `WebSearch`/`WebFetch` the official docs (`developer.huawei.com`, `docs.openharmony.cn`) for the current `@kit.*` module (NOT deprecated `@ohos.*`), then implement with the real API — the compile check catches wrong signatures.
+
+## ArkTS syntax restrictions (NEVER use these — they cause compile errors)
+- No `Record<K,V>` indexed signatures — use explicit typed fields or `HashMap`
+- No `in` operator (`'key' in obj`) — use `obj.hasOwnProperty('key')` or optional chaining
+- No `Object` as a type — use specific types or `ESObject` for interop
+- No `typeof` on expressions — only on types in type position
+- No computed property names — use `Map` or explicit fields
+- No destructuring with rest — destructure each field explicitly
+- No `for...in` loops — use `for...of` with `Object.keys()` or typed iteration
+- `as` type assertions ARE allowed — do not remove them
+
+- No `console.*` — use `hilog` from `@kit.PerformanceAnalysisKit` (convert any existing `console.*` you encounter in-place, don't leave for later)

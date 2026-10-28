@@ -1,0 +1,26 @@
+# ECAT generated
+.ecat/agents/generator/memory/
+.ecat/agents/discriminator/memory/
+.ecat/runs/
+.ecat/state.json
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.ecat/visual_cache/
+dist/
+*.egg-info/
+
+# Secrets
+.env
+
+# Local IDE / agent state
+.claude/
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
