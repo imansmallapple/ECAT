@@ -191,6 +191,8 @@ class FeaturesConfig(BaseModel):
     skill_evolution: bool = False
     multi_discriminator: bool = False
     in_loop_intervention: bool = False
+    # Deterministic resource porting before every entropy evaluation (no tokens).
+    resource_porter: bool = True
 
 
 class ReportingConfig(BaseModel):

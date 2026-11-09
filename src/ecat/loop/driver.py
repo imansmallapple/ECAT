@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ecat.entropy.base import EntropyReport, git_exclude_pathspecs, skip_dir_names
 from ecat.entropy.engine import EntropyEngine
+from ecat import porter
 from ecat.errors import AgentQuotaExhausted, IterationFailed, Oscillation, Regression
 from ecat.errors import TimeoutError as EcatTimeout
 from ecat.gradient.builder import GradientBuilder
@@ -56,6 +57,7 @@ class LoopDriver:
         max_items_per_iter: int = 15,
         chart_renderer: ChartRenderer | None = None,
         stable_iters_to_stop: int = 2,
+        resource_porter: bool = True,
     ) -> None:
         self.harmony_dir = harmony_dir
         self.android_dir = android_dir
@@ -84,6 +86,7 @@ class LoopDriver:
         # round, so one quiet round isn't proof of convergence; >=2 guards
         # against premature stop. Reset whenever H rises back to/above ε.
         self.stable_iters_to_stop = max(1, int(stable_iters_to_stop))
+        self.resource_porter = resource_porter
         self._below_streak = 0
 
     def run(self, start_iteration: int = 0) -> list[EntropyReport]:
@@ -127,6 +130,18 @@ class LoopDriver:
             # (hard checks + LLM judges via Python engine; agentic judges via
             # subagent dispatch inside the discriminator session) and then
             # writes the text gradient.
+            if self.resource_porter:
+                try:
+                    pstats = porter.run(self.harmony_dir, self.android_dir)
+                    if pstats.placeholders or pstats.from_android or pstats.rewritten_refs:
+                        (iter_dir / "resource_porter.json").write_text(
+                            json.dumps(pstats.as_dict() | {"placeholder_names": pstats.placeholders},
+                                       indent=2, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                except Exception as exc:  # never fail a round because of the porter
+                    log.warning("resource porter skipped: %s", exc)
+
             log.info("[bold magenta]Discriminator[/] running …")
             discrim_start = time.monotonic()
             try:

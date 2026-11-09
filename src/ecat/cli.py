@@ -351,6 +351,7 @@ def refine(
         max_items_per_iter=cfg.loop.max_items_per_iter,
         chart_renderer=charts,
         stable_iters_to_stop=cfg.loop.stable_iters_to_stop,
+        resource_porter=cfg.features.resource_porter,
     )
 
     reports = driver.run()
