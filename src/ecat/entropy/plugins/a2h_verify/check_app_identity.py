@@ -40,14 +40,14 @@ class AppIdentityPlugin(EntropyPlugin):
             items.append(WorkItem(
                 file=Path("AppScope/app.json5"),
                 issues=[str(fail)],
-                suggested_skills=["arkts-app-identity"],
+                suggested_skills=[],
                 severity="high",
             ))
         for warn in details.get("warns", []):
             items.append(WorkItem(
                 file=Path("AppScope/app.json5"),
                 issues=[str(warn)],
-                suggested_skills=["arkts-app-identity"],
+                suggested_skills=[],
                 severity="low",
             ))
         return items

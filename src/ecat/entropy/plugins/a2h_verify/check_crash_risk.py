@@ -90,12 +90,12 @@ _HIGH_SEVERITY_RULES = _CERTAIN_CRASH_RULES | {"R7_no_global_handler"}
 # 必须在 extract_work_items 里逐条填 suggested_skills。
 _RULE_SKILL: dict[str, str] = {
     "R1_consume_unresolved": "arkts-state-manager",
-    "R2_navdest_not_root": "arkts-navigation-builder",
-    "R3_route_unregistered": "arkts-navigation-builder",
+    "R2_navdest_not_root": "hmos-arkui-develop-skill",
+    "R3_route_unregistered": "hmos-arkui-develop-skill",
     "R4_dialog_consume": "arkts-state-manager",
-    "R5_string_res_throw": "android2hmos_resources_convert",
-    "R5_string_res_blank": "android2hmos_resources_convert",
-    "R6_res_name_missing": "android2hmos_resources_convert",
+    "R5_string_res_throw": "hmos-arkui-develop-skill",
+    "R5_string_res_blank": "hmos-arkui-develop-skill",
+    "R6_res_name_missing": "hmos-arkui-develop-skill",
     "R7_no_global_handler": "",   # 无对应 skill —— 宁可留空也不挂错
     "R8_dialog_controller_local": "arkts-component-builder",  # 无弹窗专用 skill，取组件结构类
 }

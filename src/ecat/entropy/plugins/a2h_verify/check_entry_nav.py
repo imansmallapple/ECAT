@@ -120,7 +120,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                         f"the existing root in "
                         f"`NavDestination() {{ ... }}.hideTitleBar(true)`."
                     ],
-                    suggested_skills=["arkts-navigation-builder"],
+                    suggested_skills=["hmos-arkui-develop-skill"],
                     severity="high",
                 ))
         for fail in details.get("fails", []):
@@ -130,14 +130,14 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
             items.append(WorkItem(
                 file=path,
                 issues=[str(fail)],
-                suggested_skills=["arkts-navigation-builder"],
+                suggested_skills=["hmos-arkui-develop-skill"],
                 severity="high",
             ))
         for warn in details.get("warns", []):
             items.append(WorkItem(
                 file=path,
                 issues=[str(warn)],
-                suggested_skills=["arkts-navigation-builder"],
+                suggested_skills=["hmos-arkui-develop-skill"],
                 severity="medium",
             ))
         icons = details.get("icons", {})
@@ -150,7 +150,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                             + ", ".join(missing_res[:8])
                             + (f" ... +{len(missing_res)-8} more" if len(missing_res) > 8 else "")
                             + " — copy from Android res/drawable or res/mipmap"],
-                    suggested_skills=["android2hmos_resources_convert"],
+                    suggested_skills=["hmos-arkui-develop-skill"],
                     severity="high",
                 ))
             ph_names: list[str] = []
@@ -164,7 +164,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                             + ", ".join(ph_names[:8])
                             + (f" ... +{len(ph_names)-8} more" if len(ph_names) > 8 else "")
                             + " — replace with real icons from Android res"],
-                    suggested_skills=["android2hmos_resources_convert"],
+                    suggested_skills=["hmos-arkui-develop-skill"],
                     severity="high",
                 ))
             dup_groups = [g for g in icons.get("duplicate_icons", []) if isinstance(g, list) and len(g) > 1]
@@ -173,7 +173,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                 items.append(WorkItem(
                     file=Path("resources/base/media"),
                     issues=[f"Duplicate icon groups ({len(dup_groups)}): {dup_desc} — deduplicate from Android res"],
-                    suggested_skills=["android2hmos_resources_convert"],
+                    suggested_skills=["hmos-arkui-develop-skill"],
                     severity="medium",
                 ))
             android_missing = [ic for ic in icons.get("android_icons_missing", []) if isinstance(ic, str)]
@@ -184,7 +184,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                             + ", ".join(android_missing[:8])
                             + (f" ... +{len(android_missing)-8} more" if len(android_missing) > 8 else "")
                             + " — convert from Android res"],
-                    suggested_skills=["android2hmos_resources_convert"],
+                    suggested_skills=["hmos-arkui-develop-skill"],
                     severity="high",
                 ))
             orphan = [ic for ic in icons.get("orphan_icons", []) if isinstance(ic, str)]
@@ -210,7 +210,7 @@ Score from 0.0 (navigation fully working) to 1.0 (navigation broken/missing):
                 issues=[f"{len(ms)} nav button(s) use non-icon glyphs "
                         f"({', '.join(set(str(x['icon']) for x in ms))}) — "
                         f"convert from Android res into resources/base/media/, not Text('<char>')"],
-                suggested_skills=["android2hmos_resources_convert"],
+                suggested_skills=["hmos-arkui-develop-skill"],
                 severity="medium",
             ))
 

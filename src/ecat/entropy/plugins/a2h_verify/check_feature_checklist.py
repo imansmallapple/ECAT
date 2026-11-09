@@ -1296,7 +1296,7 @@ class FeatureChecklistPlugin(EntropyPlugin):
     # 该 agent 定义里明确限定只能编辑 manifest，不得改动任何源码。
     # 硬解析失效的轮次会被 evaluate() 临时换成 _PARSER_AGENT（见 _request_llm_parse）。
     judge_subagent_type = _JUDGE_AGENT
-    default_fix_skill = "arkts-navigation-builder"
+    default_fix_skill = "hmos-arkui-develop-skill"
 
     # evaluate() 存下本轮上下文，供 extract_work_items() 回写 manifest。
     # 插件实例在 _PLUGINS 里是单例，evaluate 与 extract 在同一轮内先后执行。
