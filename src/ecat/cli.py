@@ -354,6 +354,7 @@ def refine(
         resource_porter=cfg.features.resource_porter,
         required_skills=cfg.skills.require,
         auto_fetch_skills=cfg.skills.auto_fetch,
+        skills_dir=_skill_root,
     )
 
     reports = driver.run()

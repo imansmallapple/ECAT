@@ -60,6 +60,7 @@ class LoopDriver:
         resource_porter: bool = True,
         required_skills: list[str] | None = None,
         auto_fetch_skills: bool = True,
+        skills_dir: Path | None = None,
     ) -> None:
         self.harmony_dir = harmony_dir
         self.android_dir = android_dir
@@ -91,6 +92,7 @@ class LoopDriver:
         self.resource_porter = resource_porter
         self.required_skills = list(required_skills or [])
         self.auto_fetch_skills = auto_fetch_skills
+        self.skills_dir = skills_dir
         self._below_streak = 0
 
     def run(self, start_iteration: int = 0) -> list[EntropyReport]:
@@ -138,7 +140,7 @@ class LoopDriver:
                 try:
                     from ecat import skills as skills_mod
 
-                    skill_status = skills_mod.ensure(self.required_skills)
+                    skill_status = skills_mod.ensure(self.required_skills, dest=self.skills_dir)
                     (iter_dir / "skills.json").write_text(
                         json.dumps(skill_status, indent=2, ensure_ascii=False), encoding="utf-8")
                     unknown = [n for n, st in skill_status.items() if st == "unknown"]

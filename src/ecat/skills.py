@@ -139,15 +139,29 @@ def _check_frontmatter(skill_md: Path) -> str | None:
 def ensure(names: list[str], dest: Path | None = None) -> dict[str, str]:
     """Make sure every name is installed under dest; fetch the missing ones.
 
-    Returns {name: "present" | "fetched" | "unknown" | "failed"}.
+    Order of preference: already in ``dest`` -> copy from the global
+    ``~/.agents/skills`` (no network) -> download from the Matrix registry.
+
+    The destination matters: ECAT builds its discriminator skill *catalog* by
+    scanning the workspace skills dir only, so a skill that lands outside it is
+    loadable by the generator but invisible to the routing prompt.
+
+    Returns {name: "present" | "copied" | "fetched" | "unknown" | "failed"}.
     """
     dest = Path(dest) if dest else Path.home() / ".agents" / "skills"
     dest.mkdir(parents=True, exist_ok=True)
+    global_root = Path.home() / ".agents" / "skills"
     status: dict[str, str] = {}
     for name in names:
         target = dest / name
         if (target / "SKILL.md").exists():
             status[name] = "present"
+            continue
+        local = global_root / name
+        if local != target and (local / "SKILL.md").exists():
+            shutil.copytree(local, target)
+            status[name] = "copied"
+            log.info("skills: copied %s from the global skill dir", name)
             continue
         if details(name) is None:
             status[name] = "unknown"
