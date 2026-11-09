@@ -58,6 +58,8 @@ class LoopDriver:
         chart_renderer: ChartRenderer | None = None,
         stable_iters_to_stop: int = 2,
         resource_porter: bool = True,
+        required_skills: list[str] | None = None,
+        auto_fetch_skills: bool = True,
     ) -> None:
         self.harmony_dir = harmony_dir
         self.android_dir = android_dir
@@ -87,6 +89,8 @@ class LoopDriver:
         # against premature stop. Reset whenever H rises back to/above ε.
         self.stable_iters_to_stop = max(1, int(stable_iters_to_stop))
         self.resource_porter = resource_porter
+        self.required_skills = list(required_skills or [])
+        self.auto_fetch_skills = auto_fetch_skills
         self._below_streak = 0
 
     def run(self, start_iteration: int = 0) -> list[EntropyReport]:
@@ -130,6 +134,19 @@ class LoopDriver:
             # (hard checks + LLM judges via Python engine; agentic judges via
             # subagent dispatch inside the discriminator session) and then
             # writes the text gradient.
+            if self.required_skills and self.auto_fetch_skills:
+                try:
+                    from ecat import skills as skills_mod
+
+                    skill_status = skills_mod.ensure(self.required_skills)
+                    (iter_dir / "skills.json").write_text(
+                        json.dumps(skill_status, indent=2, ensure_ascii=False), encoding="utf-8")
+                    unknown = [n for n, st in skill_status.items() if st == "unknown"]
+                    if unknown:
+                        log.warning("skills not in registry (skipped): %s", ", ".join(unknown))
+                except Exception as exc:  # never fail a round because of skills
+                    log.warning("skills ensure skipped: %s", exc)
+
             if self.resource_porter:
                 try:
                     pstats = porter.run(self.harmony_dir, self.android_dir)

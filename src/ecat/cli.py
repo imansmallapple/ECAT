@@ -352,6 +352,8 @@ def refine(
         chart_renderer=charts,
         stable_iters_to_stop=cfg.loop.stable_iters_to_stop,
         resource_porter=cfg.features.resource_porter,
+        required_skills=cfg.skills.require,
+        auto_fetch_skills=cfg.skills.auto_fetch,
     )
 
     reports = driver.run()

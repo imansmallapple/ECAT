@@ -195,6 +195,16 @@ class FeaturesConfig(BaseModel):
     resource_porter: bool = True
 
 
+class SkillsConfig(BaseModel):
+    """On-demand Agent Skills, fetched from the Matrix registry."""
+
+    registry: str = "https://matrix.openharmony.cn"
+    auto_fetch: bool = True
+    find_engine: Literal["matrix", "skills_sh"] = "matrix"
+    # Names guaranteed to be installed before every round; unknown names are logged, not fatal.
+    require: list[str] = Field(default_factory=list)
+
+
 class ReportingConfig(BaseModel):
     chart_format: Literal["png", "html"] = "png"
     chart_on_each_iter: bool = True
@@ -213,6 +223,7 @@ class EcatConfig(BaseModel):
 
     paths: PathsConfig
     harmony: HarmonyConfig = Field(default_factory=HarmonyConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
 
     generator: AgentConfig = Field(
         default_factory=lambda: AgentConfig(config_dir=Path(".ecat/agents/generator"))
