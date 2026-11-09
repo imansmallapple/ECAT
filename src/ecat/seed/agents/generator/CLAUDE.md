@@ -7,9 +7,20 @@ Migrate Android (Java/Kotlin) code to HarmonyOS (ArkTS).
 Apply fixes from the Discriminator's text gradient work-list.
 
 ## Available skills
-Load skills from the `skills/` directory in this config dir:
-- `a2h-*` — Android-to-HarmonyOS migration skills
-- `arkts-*` — ArkTS idiom correction skills
+Skills are advertised by opencode under `<available_skills>`; load one with the
+`skill({name})` tool. The ones that matter for this project:
+
+- `hmos-arkui-develop-skill` — ArkUI components, attributes, layout, common mistakes
+- `hmos-arkts-knowledge-retriever` — ArkTS language / module API evidence
+- `hmos-arkui-mvvm-pattern` — architecture layering when a fix touches structure
+- `ohos-dev-napi-module` — native .so / NAPI bindings
+- `harmonyos-build-fix` — build → parse errors → fix loop
+
+`conductor-dev`, `splash-launch-animation`, `hmos-push-*` and `ohos-system-*` are NOT
+relevant here; do not load them.
+
+**Mandatory:** before writing any ArkUI component or attribute, load
+`hmos-arkui-develop-skill` and grep its `references/` for the exact name.
 
 ## Working rules
 1. Read the text gradient work-list carefully.
