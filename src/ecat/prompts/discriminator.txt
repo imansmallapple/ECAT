@@ -71,7 +71,7 @@ Field rules:
 - `verdicts`: one key per dimension dispatched above. If `score > 0`, `issues` must contain ≥1 concrete item (file:line or feature name). Empty array → score must be 0.
 - `priority_overrides`: only for items in the pre-extracted work_list whose severity is wrong. Empty array if none.
 - `suggested_skills`: one entry per high/medium issue. `skill` MUST be from the catalog. Empty array if no match.
-- `verifications`: 1-3 executable steps per HIGH or MEDIUM item that name concrete UI behaviour (so the next round can prove on-device that the item is actually fixed). Allowed step verbs: `tap` (label), `input` (`{"at": "<label>", "text": "<text>"}`), `expect_visible` (list), `expect_absent` (list), `expect_page_changed` (true), `back`. First step may be `{"launch": true}` to restart the app.
+- `verifications`: 1-3 executable steps per HIGH or MEDIUM item that name concrete UI behaviour (so the next round can prove on-device that the item is actually fixed). Allowed step verbs: `tap` (label), `input` (`{{"at": "<label>", "text": "<text>"}}`), `expect_visible` (list), `expect_absent` (list), `expect_page_changed` (true), `back`. First step may be `{{"launch": true}}` to restart the app.
   - `file` must be the same path you used in the issue, and the labels must be literal strings a user can read on that screen. Never invent labels; if you cannot name concrete on-screen text, omit the entry instead of guessing.
   - Prefer assertions that would FAIL today (the thing that is missing) — they are re-run after the fix to prove it landed. Empty array if none.
 - `insights`: cross-cutting patterns the extractors miss. Empty array if none.
