@@ -812,7 +812,7 @@ def _dump_hmos_ui(device_cfg: dict, scratch_dir: Path) -> str | None:
     local = scratch_dir / "_hdump.json"  # 固定文件名：每次覆盖，绝不在本地累积
     try:
         _run([hdc, "-t", tgt, "shell", "uitest", "dumpLayout", "-p", remote], timeout=15)
-        _run([hdc, "-t", tgt, "file", "recv", remote, str(local)], timeout=12)
+        _run([hdc, "-t", tgt, "file", "recv", remote, str(local).replace("/", "\\")], timeout=12)
         return local.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return None
