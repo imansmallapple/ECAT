@@ -14,6 +14,10 @@ class WorkItem:
     suggested_skills: list[str]
     severity: Literal["high", "medium", "low"]
     lines: list[int] | None = None
+    # Machine-checkable steps that prove this item was actually fixed on device,
+    # e.g. [{"tap": "设置"}, {"expect_visible": ["主题", "深色"]}]. Emitted by the
+    # discriminator; executed by the UI-flow gate on the *next* round.
+    verify: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -43,6 +47,7 @@ class TextGradient:
                     "suggested_skills": item.suggested_skills,
                     "severity": item.severity,
                     "lines": item.lines,
+                    "verify": item.verify,
                 }
                 for item in self.work_list
             ],

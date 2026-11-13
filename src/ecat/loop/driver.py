@@ -61,6 +61,11 @@ class LoopDriver:
         required_skills: list[str] | None = None,
         auto_fetch_skills: bool = True,
         skills_dir: Path | None = None,
+        ui_flows_spec: str | None = None,
+        ui_flows_cmd: list[str] | None = None,
+        ui_flows_bundle: str | None = None,
+        ui_flows_device: str | None = None,
+        ui_flows_timeout: float = 300.0,
     ) -> None:
         self.harmony_dir = harmony_dir
         self.android_dir = android_dir
@@ -93,7 +98,118 @@ class LoopDriver:
         self.required_skills = list(required_skills or [])
         self.auto_fetch_skills = auto_fetch_skills
         self.skills_dir = skills_dir
+        # T2 functional gate: run UI flows on the device after each evaluation and
+        # turn failures into work items. Opt-in (ui_flows_spec must point at a spec
+        # file); a missing device or a broken runner only logs, never fails the round.
+        self.ui_flows_spec = ui_flows_spec
+        self.ui_flows_cmd = list(ui_flows_cmd or [])
+        self.ui_flows_bundle = ui_flows_bundle
+        self.ui_flows_device = ui_flows_device
+        self.ui_flows_timeout = float(ui_flows_timeout)
+        # Verify steps promised by the discriminator this round; executed on the
+        # NEXT evaluation, when the generator believes the fix is in place.
+        self._pending_verify: list[dict] = []
         self._below_streak = 0
+
+    def _changed_files(self) -> list[str]:
+        """Basenames touched since the last commit — the working set flows target."""
+        try:
+            out = subprocess.run(
+                ["git", "-C", str(self.harmony_dir), "diff", "--name-only", "HEAD"],
+                capture_output=True, text=True, timeout=60,
+            ).stdout
+        except Exception:  # noqa: BLE001
+            return []
+        return [Path(line.strip()).name for line in out.splitlines() if line.strip()]
+
+    def _build_flows_spec(self, iter_dir: Path) -> Path | None:
+        """Static flows + this round's claim verifications, written as one spec."""
+        flows: list[dict] = []
+        if self.ui_flows_spec:
+            base = Path(self.ui_flows_spec)
+            if not base.is_absolute():
+                base = Path.cwd() / base
+            if base.exists():
+                try:
+                    flows.extend(json.loads(base.read_text(encoding="utf-8")).get("flows") or [])
+                except (OSError, json.JSONDecodeError) as exc:
+                    log.warning("UI flows: cannot read spec %s (%s)", base, exc)
+        flows.extend(self._pending_verify)
+        if not flows:
+            return None
+        target = iter_dir / "ui_flows_spec.json"
+        target.write_text(json.dumps({"flows": flows}, ensure_ascii=False, indent=1), encoding="utf-8")
+        return target
+
+    def _run_ui_flows(self, iter_dir: Path) -> dict | None:
+        """Execute the UI flow gate; returns the runner payload or None."""
+        if not self.ui_flows_cmd:
+            return None
+        spec = self._build_flows_spec(iter_dir)
+        if spec is None:
+            return None
+        out_path = iter_dir / "ui_flows.json"
+        cmd = list(self.ui_flows_cmd) + [
+            "--flows", str(spec),
+            "--out", str(out_path),
+            "--changed", ",".join(self._changed_files()),
+        ]
+        if self.ui_flows_bundle:
+            cmd += ["--bundle", self.ui_flows_bundle]
+        if self.ui_flows_device:
+            cmd += ["--device", self.ui_flows_device]
+        log.info("[cyan]UI flows[/] running …")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=self.ui_flows_timeout, cwd=str(self.harmony_dir))
+        except Exception as exc:  # noqa: BLE001 — a gate must never break the loop
+            log.warning("UI flows skipped: runner failed to start (%s)", exc)
+            return None
+        if not out_path.exists():
+            log.warning("UI flows skipped: no result (rc=%s) %s", proc.returncode,
+                        (proc.stderr or "")[-200:])
+            return None
+        try:
+            data = json.loads(out_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            log.warning("UI flows skipped: unreadable result (%s)", exc)
+            return None
+        summary = data.get("summary") or {}
+        log.info("UI flows: %s passed / %s failed / %s errored / %s skipped",
+                 summary.get("passed", "?"), summary.get("failed", "?"),
+                 summary.get("errored", 0), summary.get("skipped", "?"))
+        if summary.get("errored"):
+            log.warning("UI flows: %s flow(s) could not run (device unavailable) — not counted as app failures",
+                        summary.get("errored"))
+        return data
+
+    def _flow_work_items(self, data: dict | None) -> list[WorkItem]:
+        """Failed flows → high-severity work items carrying their evidence."""
+        if not data:
+            return []
+        items: list[WorkItem] = []
+        for flow in data.get("flows") or []:
+            if flow.get("status") != "fail":
+                continue
+            screens = flow.get("screens") or []
+            target = Path(screens[0]) if screens else Path(".")
+            expected = flow.get("expected") or []
+            actual = flow.get("actual") or []
+            items.append(
+                WorkItem(
+                    file=target,
+                    issues=[
+                        ("CLAIM NOT VERIFIED: " if str(flow.get("id", "")).startswith("verify_") else "")
+                        + f"UI flow '{flow.get('id')}' failed on the device at step {flow.get('step')} "
+                        f"({flow.get('step_name')}): {flow.get('message')}. "
+                        f"expected={expected} actual={actual[:8]}"
+                        + (f". evidence: {flow.get('shot')}" if flow.get("shot") else "")
+                    ],
+                    suggested_skills=[],
+                    severity="high",
+                )
+            )
+        return items
 
     def run(self, start_iteration: int = 0) -> list[EntropyReport]:
         reports: list[EntropyReport] = []
@@ -173,6 +289,8 @@ class LoopDriver:
                 _write_error(iter_dir, str(exc))
                 raise IterationFailed(n, f"entropy evaluation: {exc}") from exc
 
+            ui_flow_result = self._run_ui_flows(iter_dir)
+
             self.gradient_builder.runner.transcript_dir = iter_dir
             try:
                 gradient = self.gradient_builder.produce(
@@ -196,6 +314,31 @@ class LoopDriver:
                     gradient = _empty_gradient()
             else:
                 prev_gradient = gradient
+
+            # Functional-gate failures are injected by code, not by the model: a
+            # failed device assertion must survive into the next round's work list
+            # even if the discriminator fails to mention it.
+            # Arm the next round: every item that came with verify steps becomes a
+            # claim we will re-check on the device after the generator claims a fix.
+            self._pending_verify = [
+                {
+                    "id": f"verify_{i}_{Path(str(item.file)).name}",
+                    "screens": [Path(str(item.file)).name],
+                    "steps": item.verify,
+                    # a claim must be re-checked even if the fix landed elsewhere
+                    "force": True,
+                }
+                for i, item in enumerate(gradient.work_list)
+                if item.verify
+            ]
+            if self._pending_verify:
+                log.info("UI flows: armed %d claim verification(s) for the next round",
+                         len(self._pending_verify))
+
+            flow_items = self._flow_work_items(ui_flow_result)
+            if flow_items:
+                gradient.work_list = flow_items + gradient.work_list
+                log.warning("UI flows: %d failed flow(s) injected into the work list", len(flow_items))
 
             # Step 2: aggregate / record / show total entropy
             reports.append(report)

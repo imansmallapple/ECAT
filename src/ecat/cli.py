@@ -166,6 +166,9 @@ def refine(
     ] = False,
     prompt: Annotated[str | None, typer.Option("--prompt", "-p", help="Additional instructions appended to Generator prompt each iteration")] = None,
     prompt_file: Annotated[Path | None, typer.Option("--prompt-file", help="File containing additional instructions for Generator")] = None,
+    start_iter: Annotated[
+        int, typer.Option("--start-iter", help="Continue numbering from this iteration; code progress already lives in the harmony git checkout")
+    ] = 0,
 ) -> None:
     """Run the adversarial Generator ↔ Discriminator refinement loop."""
     import ecat.entropy.plugins.a2h_verify  # noqa: F401 — register plugins
@@ -355,9 +358,14 @@ def refine(
         required_skills=cfg.skills.require,
         auto_fetch_skills=cfg.skills.auto_fetch,
         skills_dir=_skill_root,
+        ui_flows_spec=(cfg.ui_flows.spec if cfg.ui_flows.enabled else None),
+        ui_flows_cmd=([cfg.ui_flows.python, cfg.ui_flows.runner] if cfg.ui_flows.enabled else []),
+        ui_flows_bundle=cfg.ui_flows.bundle,
+        ui_flows_device=cfg.ui_flows.device,
+        ui_flows_timeout=cfg.ui_flows.timeout_s,
     )
 
-    reports = driver.run()
+    reports = driver.run(start_iteration=max(0, start_iter))
 
     # Re-render charts
     iters = [r.iteration for r in reports]
