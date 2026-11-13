@@ -799,13 +799,60 @@ def _walk_to(script_dir: Path | None, device: str, device_cfg: dict,
         return False
 
 
+def _dump_android(device_cfg: dict, out_json: Path, env: dict) -> bool:
+    """uiautomator tree next to the screenshot (visual_gate parses the XML)."""
+    adb, ser = device_cfg["adb_exe"], device_cfg["android_serial"]
+    try:
+        subprocess.run([adb, "-s", ser, "shell", "uiautomator", "dump",
+                        "/sdcard/_ui_align_dump.xml"],
+                       capture_output=True, text=True, env=env, timeout=30)
+        with open(out_json, "wb") as fh:
+            subprocess.run([adb, "-s", ser, "exec-out", "cat", "/sdcard/_ui_align_dump.xml"],
+                           stdout=fh, stderr=subprocess.DEVNULL, env=env, timeout=25)
+        return out_json.is_file() and out_json.stat().st_size > 100
+    except Exception:
+        return False
+
+
 def _screencap_android(device_cfg: dict, out_png: Path, env: dict) -> bool:
     adb, ser = device_cfg["adb_exe"], device_cfg["android_serial"]
     try:
         with open(out_png, "wb") as fh:
             r = subprocess.run([adb, "-s", ser, "exec-out", "screencap", "-p"],
                                stdout=fh, stderr=subprocess.DEVNULL, env=env, timeout=20)
-        return r.returncode == 0 and out_png.is_file() and out_png.stat().st_size > 1000
+        ok = r.returncode == 0 and out_png.is_file() and out_png.stat().st_size > 1000
+        if ok:
+            _dump_android(device_cfg, out_png.with_suffix(".json"), env)
+        return ok
+    except Exception:
+        return False
+
+
+def _merged_env(env: dict | None) -> dict:
+    """A trimmed env breaks hdc on Windows (it cannot open its server pid file) and
+    can break adb too, so inherit the real environment and apply overrides."""
+    import os as _os
+    return {**_os.environ, **(env or {})}
+
+
+def _hdc_path(p: Path | str) -> str:
+    """hdc on Windows only accepts backslash paths: a forward-slash path gets the
+    current directory prepended and the transfer fails silently."""
+    return str(p).replace("/", "\\")
+
+
+def _dump_hmos(device_cfg: dict, out_json: Path, env: dict) -> bool:
+    """Control tree next to the screenshot: the visual gate's structural metrics
+    (block_match / text / position) read it, and it must describe the same instant
+    as the PNG, so it is captured immediately after the screenCap."""
+    hdc, tgt = device_cfg["hdc_exe"], device_cfg["hmos_target"]
+    remote = "/data/local/tmp/_ui_align_dump.json"
+    try:
+        subprocess.run([hdc, "-t", tgt, "shell", "uitest", "dumpLayout", "-p", remote],
+                       capture_output=True, text=True, env=_merged_env(env), timeout=25)
+        subprocess.run([hdc, "-t", tgt, "file", "recv", remote, _hdc_path(out_json)],
+                       capture_output=True, text=True, env=_merged_env(env), timeout=20)
+        return out_json.is_file() and out_json.stat().st_size > 100
     except Exception:
         return False
 
@@ -816,10 +863,14 @@ def _screencap_hmos(device_cfg: dict, out_png: Path, env: dict) -> bool:
     remote = "/data/local/tmp/_ui_align_shot.png"
     try:
         subprocess.run([hdc, "-t", tgt, "shell", "uitest", "screenCap", "-p", remote],
-                       capture_output=True, text=True, env=env, timeout=20)
-        subprocess.run([hdc, "-t", tgt, "file", "recv", remote, str(out_png)],
-                           capture_output=True, text=True, env=env, timeout=20)
-        return out_png.is_file() and out_png.stat().st_size > 1000
+                       capture_output=True, text=True, env=_merged_env(env), timeout=20)
+        subprocess.run([hdc, "-t", tgt, "file", "recv", remote, _hdc_path(out_png)],
+                           capture_output=True, text=True, env=_merged_env(env), timeout=20)
+        ok = out_png.is_file() and out_png.stat().st_size > 1000
+        if ok:
+            # same basename, .json extension: visual_gate picks it up automatically
+            _dump_hmos(device_cfg, out_png.with_suffix(".json"), env)
+        return ok
     except Exception:
         return False
 
@@ -857,6 +908,40 @@ def _compose_compare(android_png: Path, hmos_png: Path, out_jpeg: Path) -> bool:
         return False
 
 
+def _dump_android_ui(device_cfg: dict, out_json: Path, env: dict) -> bool:
+    """Save the Android control tree (uiautomator XML) next to the screenshot.
+
+    The visual gate scores structure (block_match / position / colour) only when
+    both control trees sit beside the PNG pair; a failed dump is never fatal.
+    """
+    adb, ser = device_cfg.get("adb_exe") or "adb", device_cfg.get("android_serial")
+    remote = "/sdcard/_ui_align_tree.xml"
+    base = [adb] + (["-s", ser] if ser else [])
+    try:
+        r = subprocess.run(base + ["shell", "uiautomator", "dump", remote],
+                           capture_output=True, text=True, timeout=30, env=_merged_env(env))
+        if r.returncode != 0:
+            return False
+        out_json.parent.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run(base + ["pull", remote, str(out_json)],
+                           capture_output=True, text=True, timeout=30, env=_merged_env(env))
+        return r.returncode == 0 and out_json.is_file() and out_json.stat().st_size > 200
+    except Exception:
+        return False
+
+
+def _dump_hmos_ui_to(device_cfg: dict, out_json: Path, env: dict) -> bool:
+    """Save the HarmonyOS control tree (uitest dumpLayout JSON) next to the screenshot."""
+    try:
+        dump = _dump_hmos_ui(device_cfg, out_json.parent)
+        if not dump or len(dump) < 200:
+            return False
+        out_json.write_text(dump, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 def _capture_current(device_cfg: dict, env: dict, shots_dir: Path, entry: dict,
                      android_cache_dir: Path) -> bool:
     """Screenshot the current screen → compose → set entry['compare_image'].
@@ -890,6 +975,20 @@ def _capture_current(device_cfg: dict, env: dict, shots_dir: Path, entry: dict,
     if not _compose_compare(a_png, h_png, out):
         return False
     entry["compare_image"] = str(out.resolve())
+    # Control-tree dumps for the visual gate (T3): the Android tree is cached with
+    # the Android shot (that app never changes), the HarmonyOS tree is re-dumped
+    # every iteration. Both are best-effort and never block the capture.
+    a_dump_cache = android_cache_dir / f"{page}_android.json"
+    a_dump = shots_dir / f"{page}_android.json"
+    if not (a_dump_cache.is_file() and a_dump_cache.stat().st_size > 200):
+        _dump_android_ui(device_cfg, a_dump_cache, env)
+    if a_dump_cache.is_file():
+        try:
+            shutil.copyfile(a_dump_cache, a_dump)
+        except Exception:
+            pass
+    h_dump = shots_dir / f"{page}_harmony.json"
+    _dump_hmos_ui_to(device_cfg, h_dump, env)  # optional: pixel-only scoring without it
     # Menu compare: only when Android has an overflow-menu shot for this page (apps
     # without an overflow menu just skip — no HMOS menu tap, no menu compare). Tap the
     # HMOS overflow, screenshot, and pair it with the Android menu shot so the judge
