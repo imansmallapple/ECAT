@@ -205,6 +205,22 @@ class SkillsConfig(BaseModel):
     require: list[str] = Field(default_factory=list)
 
 
+class VisualGateConfig(BaseModel):
+    """T3 visual gate: score each captured screen pair against a rubric.
+
+    Runs on the screenshots `ui_align` already produces, so it costs no extra
+    device time. Off by default. Failures become work items like flow failures.
+    """
+
+    enabled: bool = False
+    # screenshots live here, relative to the per-iteration run directory
+    screens_dir: str = "ui_align/screenshots"
+    python: str = "python"
+    tool: str = "tools/visual_gate.py"
+    rubric: str = "docs/visual-rubric.json"
+    timeout_s: float = 180.0
+
+
 class UiFlowsConfig(BaseModel):
     """T2 functional gate: run UI flows on a device after each evaluation.
 
@@ -261,6 +277,7 @@ class EcatConfig(BaseModel):
     retry: RetryConfig = Field(default_factory=RetryConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     ui_flows: UiFlowsConfig = Field(default_factory=UiFlowsConfig)
+    visual_gate: VisualGateConfig = Field(default_factory=VisualGateConfig)
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
 
     # ── validators ──────────────────────────────────────────────────────────

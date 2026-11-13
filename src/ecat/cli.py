@@ -363,6 +363,14 @@ def refine(
         ui_flows_bundle=cfg.ui_flows.bundle,
         ui_flows_device=cfg.ui_flows.device,
         ui_flows_timeout=cfg.ui_flows.timeout_s,
+        visual_gate={
+            "enabled": cfg.visual_gate.enabled,
+            "screens_dir": cfg.visual_gate.screens_dir,
+            "python": cfg.visual_gate.python,
+            "tool": cfg.visual_gate.tool,
+            "rubric": cfg.visual_gate.rubric,
+            "timeout_s": cfg.visual_gate.timeout_s,
+        },
     )
 
     reports = driver.run(start_iteration=max(0, start_iter))

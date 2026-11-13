@@ -66,6 +66,7 @@ class LoopDriver:
         ui_flows_bundle: str | None = None,
         ui_flows_device: str | None = None,
         ui_flows_timeout: float = 300.0,
+        visual_gate: dict | None = None,
     ) -> None:
         self.harmony_dir = harmony_dir
         self.android_dir = android_dir
@@ -106,6 +107,8 @@ class LoopDriver:
         self.ui_flows_bundle = ui_flows_bundle
         self.ui_flows_device = ui_flows_device
         self.ui_flows_timeout = float(ui_flows_timeout)
+        # T3 visual gate config: {enabled, tool, python, screens_dir, rubric, timeout_s}
+        self.visual_gate = dict(visual_gate or {})
         # Verify steps promised by the discriminator this round; executed on the
         # NEXT evaluation, when the generator believes the fix is in place.
         self._pending_verify: list[dict] = []
@@ -182,6 +185,75 @@ class LoopDriver:
             log.warning("UI flows: %s flow(s) could not run (device unavailable) — not counted as app failures",
                         summary.get("errored"))
         return data
+
+    def _run_visual_gate(self, iter_dir: Path) -> dict | None:
+        """Score the screenshots ui_align captured; never breaks the round."""
+        if not self.visual_gate.get("enabled"):
+            return None
+        screens = iter_dir / str(self.visual_gate.get("screens_dir") or "ui_align/screenshots")
+        if not screens.exists():
+            log.debug("visual gate: no screenshots in %s", screens)
+            return None
+        out_dir = iter_dir / "visual_gate"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_json = out_dir / "result.json"
+        cmd = [
+            str(self.visual_gate.get("python") or "python"),
+            str(self.visual_gate.get("tool") or "tools/visual_gate.py"),
+            "--dir", str(screens),
+            "--out", str(out_dir),
+            "--json", str(out_json),
+        ]
+        rubric = self.visual_gate.get("rubric")
+        if rubric and Path(rubric).exists():
+            cmd += ["--rubric", str(rubric)]
+        log.info("[cyan]Visual gate[/] scoring captured screens …")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=float(self.visual_gate.get("timeout_s", 180)))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("visual gate skipped: %s", exc)
+            return None
+        if not out_json.exists():
+            log.warning("visual gate skipped: no result (rc=%s) %s",
+                        proc.returncode, (proc.stderr or "")[-200:])
+            return None
+        try:
+            data = json.loads(out_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            log.warning("visual gate skipped: unreadable result (%s)", exc)
+            return None
+        summary = data.get("summary") or {}
+        log.info("Visual gate: %s pass / %s suspect / %s fail of %s screen(s)",
+                 summary.get("pass", "?"), summary.get("suspect", "?"),
+                 summary.get("fail", "?"), summary.get("screens", "?"))
+        return data
+
+    def _visual_work_items(self, data: dict | None) -> list[WorkItem]:
+        """FAIL/SUSPECT screens become work items carrying the metric breakdown."""
+        if not data:
+            return []
+        items: list[WorkItem] = []
+        for screen in data.get("screens") or []:
+            verdict = screen.get("verdict")
+            if verdict not in ("fail", "suspect"):
+                continue
+            metrics = screen.get("metrics") or {}
+            detail = ", ".join(f"{k}={v:.3f}" for k, v in metrics.items())
+            pf = screen.get("pre_filter") or {}
+            items.append(WorkItem(
+                file=Path(f"{screen.get('screen')}.ets"),
+                issues=[
+                    f"VISUAL {verdict.upper()} on screen '{screen.get('screen')}': "
+                    f"score={screen.get('score')} ({screen.get('reason')})"
+                    + (f"; {detail}" if detail else "")
+                    + f"; struct={pf.get('struct_ratio')} color={pf.get('color_ratio')} "
+                    f"offset={pf.get('offset_px')}px; evidence: {pf.get('heatmap')}"
+                ],
+                suggested_skills=[],
+                severity="high" if verdict == "fail" else "medium",
+            ))
+        return items
 
     def _flow_work_items(self, data: dict | None) -> list[WorkItem]:
         """Failed flows → high-severity work items carrying their evidence."""
@@ -290,6 +362,7 @@ class LoopDriver:
                 raise IterationFailed(n, f"entropy evaluation: {exc}") from exc
 
             ui_flow_result = self._run_ui_flows(iter_dir)
+            visual_result = self._run_visual_gate(iter_dir)
 
             self.gradient_builder.runner.transcript_dir = iter_dir
             try:
@@ -336,6 +409,10 @@ class LoopDriver:
                          len(self._pending_verify))
 
             flow_items = self._flow_work_items(ui_flow_result)
+            visual_items = self._visual_work_items(visual_result)
+            if visual_items:
+                gradient.work_list = visual_items + gradient.work_list
+                log.warning("Visual gate: %d screen(s) injected into the work list", len(visual_items))
             if flow_items:
                 gradient.work_list = flow_items + gradient.work_list
                 log.warning("UI flows: %d failed flow(s) injected into the work list", len(flow_items))
