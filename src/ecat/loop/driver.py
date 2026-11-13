@@ -325,6 +325,8 @@ class LoopDriver:
                     "id": f"verify_{i}_{Path(str(item.file)).name}",
                     "screens": [Path(str(item.file)).name],
                     "steps": item.verify,
+                    # a claim must be re-checked even if the fix landed elsewhere
+                    "force": True,
                 }
                 for i, item in enumerate(gradient.work_list)
                 if item.verify
