@@ -205,6 +205,23 @@ class SkillsConfig(BaseModel):
     require: list[str] = Field(default_factory=list)
 
 
+class UiFlowsConfig(BaseModel):
+    """T2 functional gate: run UI flows on a device after each evaluation.
+
+    Off by default — point `spec` at a flows JSON to enable. Failures become
+    high-severity work items (injected by code, not by the discriminator).
+    """
+
+    enabled: bool = False
+    spec: str | None = None
+    # Runner is invoked as: <python> <runner> --flows ... --out ...
+    python: str = "python"
+    runner: str = "tools/ui_runner.py"
+    bundle: str | None = None
+    device: str | None = None
+    timeout_s: float = 300.0
+
+
 class ReportingConfig(BaseModel):
     chart_format: Literal["png", "html"] = "png"
     chart_on_each_iter: bool = True
@@ -243,6 +260,7 @@ class EcatConfig(BaseModel):
     entropy: EntropyConfig = Field(default_factory=EntropyConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
+    ui_flows: UiFlowsConfig = Field(default_factory=UiFlowsConfig)
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
 
     # ── validators ──────────────────────────────────────────────────────────
