@@ -185,6 +185,10 @@ class GradientBuilder:
             work_list, overrides if isinstance(overrides, list) else [],
         )
 
+        verify_list = parsed.get("verifications", [])
+        if verify_list:
+            work_list = _apply_verifications(work_list, verify_list)
+
         skill_map = parsed.get("suggested_skills", {})
         if isinstance(skill_map, dict) and skill_map:
             if valid_skill_names:
@@ -200,6 +204,38 @@ class GradientBuilder:
             insights=insights_raw if isinstance(insights_raw, list) else [],
         )
 
+
+
+def _apply_verifications(work_list: list[WorkItem], entries: object) -> list[WorkItem]:
+    """Attach discriminator-emitted verify steps to the matching work items.
+
+    Matching is by basename so `entry/src/main/ets/SettingsActivity.ets` from the
+    model still binds to the item's path. Entries whose steps are malformed are
+    dropped rather than failing the round — verification is advisory metal, the
+    work list itself must survive.
+    """
+    if not isinstance(entries, list):
+        return work_list
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for ent in entries:
+        if not isinstance(ent, dict):
+            continue
+        f = str(ent.get("file") or "").strip()
+        steps = ent.get("steps")
+        if not f or not isinstance(steps, list) or not steps:
+            continue
+        clean = [st for st in steps if isinstance(st, dict) and st]
+        if clean:
+            by_name[Path(f).name] = clean[:6]
+    if not by_name:
+        return work_list
+    out: list[WorkItem] = []
+    for item in work_list:
+        steps = by_name.get(Path(str(item.file)).name)
+        if steps and not item.verify:
+            item.verify = steps
+        out.append(item)
+    return out
 
 
 def _build_memory_section(
@@ -599,6 +635,7 @@ def _parse_discriminator_response(
 # fragments like `{"score": 0.18}` that may appear inside narrative text).
 _DISCRIMINATOR_EXPECTED_KEYS = frozenset((
     "summary", "verdicts", "priority_overrides", "suggested_skills", "insights",
+    "verifications",
 ))
 
 

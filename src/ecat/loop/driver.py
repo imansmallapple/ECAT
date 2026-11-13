@@ -106,6 +106,9 @@ class LoopDriver:
         self.ui_flows_bundle = ui_flows_bundle
         self.ui_flows_device = ui_flows_device
         self.ui_flows_timeout = float(ui_flows_timeout)
+        # Verify steps promised by the discriminator this round; executed on the
+        # NEXT evaluation, when the generator believes the fix is in place.
+        self._pending_verify: list[dict] = []
         self._below_streak = 0
 
     def _changed_files(self) -> list[str]:
@@ -119,13 +122,35 @@ class LoopDriver:
             return []
         return [Path(line.strip()).name for line in out.splitlines() if line.strip()]
 
+    def _build_flows_spec(self, iter_dir: Path) -> Path | None:
+        """Static flows + this round's claim verifications, written as one spec."""
+        flows: list[dict] = []
+        if self.ui_flows_spec:
+            base = Path(self.ui_flows_spec)
+            if not base.is_absolute():
+                base = Path.cwd() / base
+            if base.exists():
+                try:
+                    flows.extend(json.loads(base.read_text(encoding="utf-8")).get("flows") or [])
+                except (OSError, json.JSONDecodeError) as exc:
+                    log.warning("UI flows: cannot read spec %s (%s)", base, exc)
+        flows.extend(self._pending_verify)
+        if not flows:
+            return None
+        target = iter_dir / "ui_flows_spec.json"
+        target.write_text(json.dumps({"flows": flows}, ensure_ascii=False, indent=1), encoding="utf-8")
+        return target
+
     def _run_ui_flows(self, iter_dir: Path) -> dict | None:
         """Execute the UI flow gate; returns the runner payload or None."""
-        if not (self.ui_flows_spec and self.ui_flows_cmd):
+        if not self.ui_flows_cmd:
+            return None
+        spec = self._build_flows_spec(iter_dir)
+        if spec is None:
             return None
         out_path = iter_dir / "ui_flows.json"
         cmd = list(self.ui_flows_cmd) + [
-            "--flows", str(self.ui_flows_spec),
+            "--flows", str(spec),
             "--out", str(out_path),
             "--changed", ",".join(self._changed_files()),
         ]
@@ -174,7 +199,8 @@ class LoopDriver:
                 WorkItem(
                     file=target,
                     issues=[
-                        f"UI flow '{flow.get('id')}' failed on the device at step {flow.get('step')} "
+                        ("CLAIM NOT VERIFIED: " if str(flow.get("id", "")).startswith("verify_") else "")
+                        + f"UI flow '{flow.get('id')}' failed on the device at step {flow.get('step')} "
                         f"({flow.get('step_name')}): {flow.get('message')}. "
                         f"expected={expected} actual={actual[:8]}"
                         + (f". evidence: {flow.get('shot')}" if flow.get("shot") else "")
@@ -292,6 +318,21 @@ class LoopDriver:
             # Functional-gate failures are injected by code, not by the model: a
             # failed device assertion must survive into the next round's work list
             # even if the discriminator fails to mention it.
+            # Arm the next round: every item that came with verify steps becomes a
+            # claim we will re-check on the device after the generator claims a fix.
+            self._pending_verify = [
+                {
+                    "id": f"verify_{i}_{Path(str(item.file)).name}",
+                    "screens": [Path(str(item.file)).name],
+                    "steps": item.verify,
+                }
+                for i, item in enumerate(gradient.work_list)
+                if item.verify
+            ]
+            if self._pending_verify:
+                log.info("UI flows: armed %d claim verification(s) for the next round",
+                         len(self._pending_verify))
+
             flow_items = self._flow_work_items(ui_flow_result)
             if flow_items:
                 gradient.work_list = flow_items + gradient.work_list
