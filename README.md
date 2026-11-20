@@ -409,6 +409,23 @@ generator:
 | `ecat status` | Current entropy and iteration count |
 | `ecat diff <N>` | Entropy breakdown, gradient and diff for iteration N |
 | `ecat report` | Generate a markdown report plus charts |
+| `ecat uiflow inventory` | Layer A: parameterised `am start` over every manifest activity → reachability table |
+| `ecat uiflow discover` | Layer B: DroidBot exploration → the page set a user can reach |
+| `ecat uiflow import-flows` | Layer C: import the T2 (ui_runner) report as the port's page set |
+| `ecat uiflow spec-from-discovery` | Generate the spec skeleton (identity join key) from a discovery graph |
+| `ecat uiflow diff` | Acceptance: `diff(B, C)` → FN rate, both directions (`docs/ui-flow.md`) |
+| `ecat uiflow audit-flows` | Audit a flow spec for flows that cannot fail / lie / drift with data |
+| `ecat uiflow check-port` | Validate spec screen names against the port's `main_pages.json` + routes; flags unreachable pages |
+| `ecat uiflow report` | One verdict artifact (JSON + Markdown) for all gates, single exit code 0/1/4 |
+| `ecat uiflow history` | Per-bundle run history; `report` also prints the delta (regression/fixed/unchanged) |
+| `ecat uiflow spec-confirm` | Accept the auto-proposed screen pairings once a human has reviewed them |
+| state coverage | `states` in a spec row + `"state"` on flow steps → `state FN` for tabs/filters/panels inside a page |
+| `uiflow diagnose` | run the measurement and emit work items (`work_list` = port defects, `tooling` = bad measuring stick) |
+| `scripts/uiflow_gate.sh` | CI entry point: flows → C graph → verdict, exits with the verdict's code |
+| `scripts/uiflow_diagnose.sh` | discovery entry point: same measurement → work items today can be fixed, never fails the build unless unmeasurable |
+| `ecat uiflow audit-discovery` | Is B's denominator complete? Manifest activities vs discovered pages, app vs library |
+| `ecat uiflow suggest-assertions` | Which labels can prove arrival (present here, absent on the previous screen) |
+| `scripts/uiflow_fix_verify.sh` | work item → refine → build → same flows → verdict → history |
 
 Common examples for each subcommand follow.
 
