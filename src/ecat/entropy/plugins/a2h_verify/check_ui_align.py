@@ -133,6 +133,26 @@ Do not modify code.
                 suggested_skills=[],
                 severity="high",
             ))
+
+        # deterministic gate: blocking rows are concrete, page-attributed defects
+        gate = details.get("deterministic_gate") or {}
+        if isinstance(gate, dict) and gate.get("gate") == "fail":
+            try:
+                from ecat.entropy.plugins.a2h_verify.deterministic_gate import blocking_issues
+                issues = blocking_issues(gate)
+            except Exception:                 # noqa: BLE001
+                issues = []
+            by_page: dict[str, list[str]] = {}
+            for line in issues:
+                page = line.split("]", 1)[0].removeprefix("ui_gate[")
+                by_page.setdefault(page, []).append(line)
+            for page, lines in by_page.items():
+                items.append(WorkItem(
+                    file=Path("."),
+                    issues=lines,
+                    suggested_skills=[],
+                    severity="high",
+                ))
         return items
 
     # ── evaluate ──────────────────────────────────────────────────────────────
@@ -286,9 +306,28 @@ Do not modify code.
             json.dumps(dispatch, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
-        # hard_score 恒为 0：ui_align 的分数完全由视觉 judge 给（截图一致=0，差异越大越接近1）。
-        # 硬检查只负责截图+准备，不打分 → 任何失败路径都是 0，绝不误抬。
+        # 8. 确定性视觉门（D1/D2/D3）：用同一批截图 + 控件树跑 tools/visual_audit.py。
+        #    这一步给的是"过/不过"和阻断项，不依赖任何模型；失败即 unavailable，绝不阻塞循环。
+        gate_result: dict[str, object] = {"gate": "unavailable", "score": 0.0, "pages": []}
+        if bool(config.get("ui_align_deterministic", True)):
+            try:
+                from ecat.entropy.plugins.a2h_verify.deterministic_gate import run_gate
+                gate_result = run_gate(
+                    shots_dir,
+                    [str(e.get("page")) for e in subset if e.get("page")],
+                    hmos_bundle,
+                    out_dir=iter_dir / "deterministic",
+                )
+            except Exception as exc:          # noqa: BLE001 - a broken gate must not stop the loop
+                gate_result = {"gate": "unavailable", "score": 0.0, "pages": [],
+                               "reason": f"{type(exc).__name__}: {exc}"}
+
+        # hard_score：默认 0（分数完全由视觉 judge 给）；开启 ui_align_deterministic_score
+        # 后，确定性门的失败分数直接进入梯度，阻断项同时变成下一轮的 WorkItem。
         hard_score = 0.0
+        if bool(config.get("ui_align_deterministic_score", False)):
+            raw = gate_result.get("score", 0.0)
+            hard_score = float(raw) if isinstance(raw, (int, float)) else 0.0
 
         details: dict[str, object] = {
             "mode": "detect",
@@ -298,6 +337,7 @@ Do not modify code.
             "subset_pages": [e["page"] for e in subset],
             "screenshots_captured": captured,
             "android_screenshots_dir": android_shots_dir,
+            "deterministic_gate": gate_result,
         }
         return hard_score, details
 
